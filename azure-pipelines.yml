@@ -1,0 +1,51 @@
+# Starter pipeline
+# Start with a minimal pipeline that you can customize to build and deploy your code.
+# Add steps that build, run tests, deploy, and more:
+# https://aka.ms/yaml
+
+trigger:
+- master
+
+pool:
+  vmImage: ubuntu-latest
+
+steps:
+- script: |
+    wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh
+    bash miniconda.sh -b -p $HOME/miniconda
+    echo "##vso[task.prependpath]$HOME/miniconda/bin"
+    source $HOME/miniconda/bin/activate
+    conda init bash
+  displayName: 'Install Miniconda'
+
+- script: |
+    conda install mamba -n base -c conda-forge -y
+  displayName: 'Install Mamba'
+
+- script: |
+    mamba env create --file environment.yml -y
+  displayName: 'Create Environment using Mamba'
+
+- script: |
+    source $HOME/miniconda/bin/activate mobilecapacityenv
+    pytest --junitxml=test-results.xml
+  displayName: 'Run Tests with Pytest'
+  
+- script: |
+    source $HOME/miniconda/bin/activate mobilecapacityenv
+    flake8 . > flake8_output.txt
+    flake8_junit flake8_output.txt flake8_results.xml
+  displayName: 'Generate Flake8 JUnit Report'
+
+- task: PublishTestResults@2
+  inputs:
+    testResultsFormat: 'JUnit'
+    testResultsFiles: '**/flake8_results.xml'
+    failTaskOnFailedTests: false
+  displayName: 'Publish Flake8 results'
+
+- task: PublishTestResults@2
+  inputs:
+    testResultsFormat: 'JUnit'
+    testResultsFiles: '**/test-results.xml'
+  condition: succeededOrFailed()

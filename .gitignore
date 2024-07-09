@@ -1,0 +1,18 @@
+/__pycache__
+__pycache__/
+**/__pycache__/
+.ipynb_checkpoints
+.ipynb_aml_checkpoints
+*/.ipynb_checkpoints/*
+*/.ipynb_aml_checkpoints/*
+*.amltmp
+*.amlignore
+*.amlignore.amltmp
+.DS_Store
+.idea/
+config*
+*.pyc
+logs/*
+#Ignore all CSV files starting with bw in the input_data foldes
+data/input_data/bw*.csv
+data/output_data/*
