@@ -14,9 +14,9 @@ data_files = {
     "bwdistance_km_file_name": "bwdistance_km.csv",
     "bwdlachievbr_file_name": "bwdlachievbr_kbps.csv",
     "pop_file": "population.tif",
-    "area_file" : "area.gpkg",
-    "mbbsubscr_file" : "active-mobile-broadband-subscriptions_1711147050645.csv",
-    "mbbtraffic_file" : "mobile-broadband-internet-traffic-within-the-country_1711147118571.csv"
+    "area_file": "area.gpkg",
+    "mbbsubscr_file": "active-mobile-broadband-subscriptions_1711147050645.csv",
+    "mbbtraffic_file": "mobile-broadband-internet-traffic-within-the-country_1711147118571.csv"
 }
 
 # Network Configuration
@@ -43,15 +43,20 @@ mobilecapacity = Capacity(data_files, country_name,
                           rb_num_multiplier=5, nbhours=10, root_dir=os.getcwd(), enable_logging=False)
 
 # Define function to compute capacity
+
+
 def compute_capacity(d, popcd, pop):
     return mobilecapacity.capacity_checker(d=d, popcd=popcd, udatavmonth=mobilecapacity.udatavmonth_pu, pop=pop)
 
+
 # User inputs (outside of main layout function)
 d = st.number_input("Distance between POI and tower (km)", min_value=0, step=1)
-popcd =  st.number_input("Distance between population centre and tower (km)", min_value=0, step=1)
+popcd = st.number_input("Distance between population centre and tower (km)", min_value=0, step=1)
 pop = st.number_input("Total Population (pop)", min_value=0, step=1)
 
 # Main layout function
+
+
 def main():
     st.sidebar.title("Parameters")
     st.sidebar.write("Configure parameters and click 'Compute' to check capacity.")
@@ -59,6 +64,7 @@ def main():
     if st.sidebar.button("Compute"):
         result = compute_capacity(d, popcd, pop)
         st.write(f"Capacity check: {result}")
+
 
 # Run the app
 if __name__ == "__main__":

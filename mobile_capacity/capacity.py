@@ -1,20 +1,24 @@
-from mobile_capacity.spatial import meters_to_degrees_latitude, generate_voronoi_polygons
+from mobile_capacity.spatial import meters_to_degrees_latitude, create_voronoi_cells, create_voronoi_cells, get_population_sum
+from mobile_capacity.utils import load_data, initialize_logger
 import logging
 import numpy as np
 import pandas as pd
 import geopandas as gpd
 import sys
 import os
+from functools import wraps
 import rasterio
+from rasterio.transform import from_origin
 from datetime import datetime
-from rasterstats import zonal_stats
+from scipy.spatial import cKDTree
+
 
 class Capacity:
     def __init__(self, data_files: dict, country_name: str,
                  bw, cco, fb_per_site, max_radius, min_radius, radius_step, angles_num,
-                 rotation_angle, dlthtarg, nonbhu, root_dir, rb_num_multiplier=5, 
+                 rotation_angle, dlthtarg, nonbhu, root_dir, rb_num_multiplier=5,
                  nbhours=10, oppopshare=50, enable_logging=False):
-        
+
         # Data storage
         self.root_dir = root_dir
         self.input_data_path = os.path.join(root_dir, 'data', 'input_data')
@@ -24,34 +28,10 @@ class Capacity:
         # Logger
         self.logger = None
         if enable_logging:
-            # Create a logger
-            self.logger = logging.getLogger(__name__)
-            # Set minimum logging level to DEBUG
-            self.logger.setLevel(logging.DEBUG)
+            self.logger = initialize_logger(__name__)
 
-            # Define a console handler to output log messages to console
-            ch = logging.StreamHandler()
-            ch.setLevel(logging.DEBUG)  # Set console output level to DEBUG
-
-            # Define a file handler to save log messages to a file
-            log_filename = datetime.now().strftime('app_%Y-%m-%d_%H-%M-%S.log')
-            true_root = os.path.dirname(os.path.abspath('.'))
-            # Unique log file based on timestamp
-            log_file = os.path.join(true_root, 'logs', log_filename)
-            # Ensure the log directory exists
-            os.makedirs(os.path.dirname(log_file), exist_ok=True)
-            fh = logging.FileHandler(log_file)
-            fh.setLevel(logging.DEBUG)  # Set
-
-            # Define a formatter to specify the format of log messages
-            formatter = logging.Formatter(
-                '%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-            ch.setFormatter(formatter)
-            fh.setFormatter(formatter)
-
-            # Add the console handler to the logger
-            self.logger.addHandler(ch)
-            self.logger.addHandler(fh)
+        # Input validation
+        self._validate_input(bw)
 
         # Parameters
         self.country_name = country_name  # Country name
@@ -66,9 +46,9 @@ class Capacity:
         self.days = 30.4  # Days in one month
         self.nbhours = nbhours  # number of non-busy hours per day
         self.rb_num_multiplier = rb_num_multiplier  # Resource block number multiplier
-        self.max_radius = max_radius # maximum buffer radius
-        self.min_radius = min_radius # maximum buffer radius
-        self.radius_step = radius_step # maximum buffer radius
+        self.max_radius = max_radius  # maximum buffer radius
+        self.min_radius = min_radius  # maximum buffer radius
+        self.radius_step = radius_step  # maximum buffer radius
 
         # Constants
         self.minperhour = 60  # number of minutes per hour
@@ -77,213 +57,168 @@ class Capacity:
         self.bitsinkbit = 1000  # bits in kilobit
         self.bitsingbyte = 8589934592  # bits in one gigabyte
 
-        # Intermediary outputs
-        # RB number required to meet download throughput target in units
-        self.rbdlthtarg_result = None
-        # Bitrate per resource block at population center distance in kbps
-        self.brrbpopcd_result = None
-        self.avubrnonbh_result = None  # Average user bitrate in non-busy hour in kbps
-        self.upopbr_result = None  # User Population Bitrate in kbps
-        self.upoprbu_result = None  # User population resource blocks utilisation
-        self.sufcapch_result = None  # Sufficient capacity check
+        # Load data using the imported function
+        loaded_data = load_data(self.root_dir, self.data_files, self.logger)
 
-        # Load file inputs
-        self.bwdistance_km = self._load_file(
-            f"{self.input_data_path}/{self.data_files['bwdistance_km_file_name']}", 'csv')
-        self.bwdlachievbr = self._load_file(
-            f"{self.input_data_path}/{self.data_files['bwdlachievbr_file_name']}", 'csv')
-        self.cellsites = self._load_file(
-            f"{self.input_data_path}/{self.data_files['cellsites_file']}", 'csv')
-        self.mbbt = self._load_file(
-            f"{self.input_data_path}/{self.data_files['mbbt_file']}", 'csv')
-        self.visibility = self._load_file(
-            f"{self.input_data_path}/{self.data_files['poi_visibility_file']}", 'csv')
-        self.mbbsubscr = self._load_file(
-            f"{self.input_data_path}/{self.data_files['mbbsubscr_file']}", 'csv')
-        self.mbbtraffic = self._load_file(
-            f"{self.input_data_path}/{self.data_files['mbbtraffic_file']}", 'csv')
-        self.area = self._load_file(
-            f"{self.input_data_path}/{self.data_files['area_file']}", 'gpkg')
-        self.population = self._load_file(
-            f"{self.input_data_path}/{self.data_files['pop_file']}", 'tif')
+        # Assign loaded data to class attributes
+        self.bwdistance_km = loaded_data['bwdistance_km']
+        self.bwdlachievbr = loaded_data['bwdlachievbr']
+        self.cellsites = loaded_data['cellsites']
+        self.mbbt = loaded_data['mbbt']
+        self.poi = loaded_data['poi']
+        self.visibility = loaded_data['poi_visibility']
+        self.mbbsubscr = loaded_data['mbbsubscr']
+        self.mbbtraffic = loaded_data['mbbtraffic']
+        self.area = loaded_data['area']
+        self.population = loaded_data['population']
+
+    def _validate_input(self, bw):
+        """Validates the bandwidth (bw) parameter."""
+        valid_bw_values = {5, 10, 15, 20}
+        if bw not in valid_bw_values:
+            raise ValueError(f"Invalid bandwidth (bw) value: {bw}. Must be one of {valid_bw_values}.")
 
     def _log_info(self, message):
+        """Logs an info message."""
         if self.logger:
-            self.logger.info(message)    
-    
+            self.logger.info(message)
+
     @property
     def udatavmonth_pu(self):
         """
         Returns average mobile broadband user data traffic volume per month in GBs (Gigabytes) for the latest year in the ITU dataset.
         """
-        return self.mbbt.loc[self.mbbt["entityName"] ==
-                             self.country_name, "mbb_traffic_per_subscr_per_month"].item()
-    
+        return self.mbbt.loc[self.mbbt["entityName"]
+                             == self.country_name, "mbb_traffic_per_subscr_per_month"].item()
+
     @property
     def udatavmonth_year(self):
         """
         Returns average monthly mobile broadband user data traffic volume in gigabytes (GB).
         """
-        return self.mbbt.loc[self.mbbt["entityName"] ==
-                             self.country_name, "dataYear"].item()
+        return self.mbbt.loc[self.mbbt["entityName"]
+                             == self.country_name, "dataYear"].item()
 
     @property
     def nrb(self):
+        """
+        Returns the number of resource blocks.
+        """
         return self.bw * self.rb_num_multiplier
 
     @property
     def avrbpdsch(self):
+        """
+        Returns the average number of RB available for PDSCH in units.
+        """
         return ((100 - self.cco) / self.nrb) * 100
 
-    def _load_file(self, file_path, file_type):
+    def get_dl_bitrate(self, poi_distances):
         """
-        Private method to load the file based on the file type.
-        """
-        try:
-            if file_type == 'csv':
-                data = pd.read_csv(file_path)
-            elif file_type == 'json':
-                data = pd.read_json(file_path)
-            elif file_type == 'excel':
-                data = pd.read_excel(file_path)
-            elif file_type == 'gpkg':
-                data = gpd.read_file(file_path)
-            elif file_type == 'tif':
-                with rasterio.open(file_path) as popdata:
-                    # Read the first band of the raster data which represents
-                    # population data
-                    raster_data = popdata.read(1)
-                    desired_crs = popdata.crs
-                    # save the affine transformation of the raster data for
-                    # geospatial analysis
-                    affine = popdata.transform
-                    data = {
-                        'raster_data': raster_data,
-                        'crs': desired_crs,
-                        'affine': affine}
-            else:
-                raise ValueError(f"Unsupported file type: {file_type}")
-            self._log_info(f"File loaded successfully from {file_path}")
-            return data
-        except FileNotFoundError:
-            self._log_info(f"File not found: {file_path}")
-        except Exception as e:
-            self._log_info(f"An error occurred while loading the file: {e}")
+        Calculate the downlink bitrate based on the given POI distances.
 
-    def clear_intermediary_outputs(self):
+        Parameters:
+        - poi_distances (list): List of POI distances in meters, can contain a single or multiple distances.
+        - type (str): Type of calculation, either "poidatareq" or "brrpopcd".
+
+        Returns:
+        - np.ndarray: Array of downlink bitrates corresponding to each POI distance.
+
+        Note:
+        - `bwdistance_k` and `bwdlachievbr` are expected to be pandas DataFrames with columns
+          named as `{bandwidth}MHz`.
         """
-        Clears intermediary output attributes of the Capacity class.
-        """
-        self.rbdlthtarg_result = None  # RB number required to meet download throughput target in units
-        self.brrbpopcd_result = None  # User population resource blocks utilisation
-        self.avubrnonbh_result = None  # Average user bitrate in non-busy hour in kbps
-        self.upopbr_result = None  # User Population Bitrate in kbps
-        self.upoprbu_result = None  # User population resource blocks utilisation
-        self.sufcapch_result = None  # Sufficient capacity check
+        if not isinstance(poi_distances, list):
+            poi_distances = [poi_distances]
+
+        # Convert input distances to numpy array
+        poi_distances = np.array(poi_distances) / 1000
+
+        # Retrieve distance and bitrate arrays for the given bandwidth
+        distances_array = self.bwdistance_km[[f'{self.bw}MHz']].values.flatten()
+        bitrate_array = self.bwdlachievbr[[f'{self.bw}MHz']].values.flatten()
+
+        # Create a mask to find the first distance in distances_array larger than or equal to each POI-tower distance
+        mask = (distances_array[np.newaxis, :] >= poi_distances[:, np.newaxis])
+        indices = mask.argmax(axis=1)
+
+        # Identify POI distances that do not have a corresponding larger/equal distance in distances_array
+        no_larger_equal = ~mask.any(axis=1)
+
+        # Fetch the corresponding bitrate values and handle out-of-bound values
+        dl_bitrate = bitrate_array[indices]
+        dl_bitrate[no_larger_equal] = np.nan
+
+        return dl_bitrate
 
     def poiddatareq(self, d):
         """
-        Resource blocks number required to meet download throughput target.
+        Calculate the number of resource blocks required to meet the download throughput target for each distance.
 
         Parameters:
-        - avrbpdsch (float): Avg. number of RB available for PDSCH in units.
-        - d (int): Distance from tower in meters.
-        - max_radius (int): 
+        - d (list): List of distances from the tower in meters.
 
         Returns:
-        - rbdlthtarg (float): RB number required to meet download throughput target in units.
-
-        Note:
+        - list: List of resource blocks required to meet the download throughput target for each distance.
+                    Returns np.inf for distances exceeding max_radius or None if an error occurs.
         """
+        if not isinstance(d, list):
+            d = [d]
 
-        if d > self.max_radius:
-            rbdlthtarg = np.inf
-            match_result = None
-            index_result = None
-        else:
-            # Read in bwdistance_km
-            bwdistance_km = self.bwdistance_km.copy()
-
-            # Read in bwdlachievbr
-            bwdlachievbr = self.bwdlachievbr.copy()
-
-            # Attempt to find the match_result
-            match_result = bwdistance_km.loc[bwdistance_km[f'{self.bw}MHz'] > d/1000].index.min()
-
-            if pd.isna(match_result) or (match_result < 0):
-                # Raises an error if no match is found
-                match_result = None
-                index_result = None
-                rbdlthtarg = None
-                print ("No matching index found (poiddatareq).")
-            else:
-                # Attempt to retrieve index_result if match_result is found
-                index_result = bwdlachievbr.loc[match_result, f'{self.bw}MHz']
-                rbdlthtarg = self.dlthtarg * 1024 / (index_result / self.avrbpdsch)
-
-        self._log_info(f'match_result = {match_result}')
-        self._log_info(f'index_result = {index_result}')
-        self._log_info(f'rbdlthtarg = {rbdlthtarg}')
-
-        # Store the result
-        self.rbdlthtarg_result = rbdlthtarg
-        return rbdlthtarg
+        results = []
+        try:
+            # Get the downlink bitrate for the given distances
+            dl_bitrate = self.get_dl_bitrate(poi_distances=d)
+            for i, distance in enumerate(d):
+                # Compute the number of resource blocks required to meet the download throughput target
+                if distance > self.max_radius:
+                    rbdlthtarg = np.inf
+                else:
+                    rbdlthtarg = self.dlthtarg * 1024 / (dl_bitrate[i] / self.avrbpdsch)
+                # Log the result for each distance
+                self._log_info(f'distance = {distance}, rbdlthtarg = {rbdlthtarg}')
+                results.append(rbdlthtarg)
+        except ValueError as e:
+            self._log_info(f"ValueError in poiddatareq: {e}")
+            results = [None] * len(d)
+        except Exception as e:
+            self._log_info(f"An error occurred in poiddatareq: {e}")
+            results = [None] * len(d)
+        return results
 
     def brrbpopcd(self, popcd):
         """
-        Bitrate per resource block at population center distance
+        Bitrate per resource block at population center distance.
 
         Parameters:
-        - bwdistance_km: Distance samples for channels with different bandwidth in km.
-        - bwdlachievbr (float): Achievable downlink bitrate for channels with different bandwidth in kbps.
         - popcd (int): Population center distance in meters.
-        - avrbpdsch (float): Avg. number of RB available for PDSCH in units.
 
         Returns:
         - brrbpopcd (float): Bitrate per resource block at population center distance in kbps.
-
-        Note:
         """
-        # Read in bwdistance_km
-        bwdistance_km = self.bwdistance_km.copy()
+        if not isinstance(popcd, list):
+            popcd = [popcd]
 
-        # Read in bwdlachievbr
-        bwdlachievbr = self.bwdlachievbr.copy()
-
+        results = []
         try:
-            # Attempt to find the match_result
-            match_result = bwdistance_km.loc[bwdistance_km[f'{self.bw}MHz']
-                                             > popcd / 1000].index.min()
-            if pd.isna(match_result):
-                # Raises an error if no match is found
-                raise ValueError("No matching index found (brrbpopcd).")
-            # Attempt to retrieve index_result if match_result is found
-            index_result = bwdlachievbr.loc[match_result, f'{self.bw}MHz']
-            brrbpopcd = index_result / self.avrbpdsch
-            self._log_info(f'match_result = {match_result}')
+            # Get the downlink bitrate for the given distances
+            dl_bitrate = self.get_dl_bitrate(poi_distances=popcd)
+            for i, distance in enumerate(popcd):
+                # Compute the bitrate per resource block at the population center distance
+                brrbpopcd = dl_bitrate[i] / self.avrbpdsch
+                self._log_info(f'population centre distance = {distance}, brrbpopcd = {brrbpopcd}')
+                results.append(brrbpopcd)
         except ValueError as e:
-            # Handle the case where no matching index is found
-            self._log_info(e)
-            # Optionally, set index_result to None or another default value
-            index_result = None
-            brrbpopcd = None
+            self._log_info(f"ValueError in brrbpopcd: {e}")
+            results = [None] * len(popcd)
         except Exception as e:
-            # Handle other potential exceptions (e.g., wrong column name)
-            self._log_info(f"An error occurred (brrbpopcd): {e}")
-            # Optionally, set index_result to None or another default value
-            index_result = None
-            brrbpopcd = None
-
-            self._log_info(f'index_result = {index_result}')
-            self._log_info(f'brrbpopcd = {brrbpopcd}')
-
-        # Store the result
-        self.brrbpopcd_result = brrbpopcd
-        return brrbpopcd
+            self._log_info(f"An error occurred in brrbpopcd: {e}")
+            results = [None] * len(popcd)
+        return results
 
     def avubrnonbh(self, udatavmonth):
         """
-        Average user bitrate in non-busy hour
+        Average user bitrate in non-busy hour.
 
         Parameters:
         - udatavmonth (int): Average user data traffic volume per month in GB (Gigabyte)
@@ -299,8 +234,8 @@ class Capacity:
             ((((((udatavmonth /
                   self.days) /
                  self.nbhours) *
-                self.nonbhu /
-                100) /
+                self.nonbhu
+                / 100) /
                self.minperhour) /
               self.secpermin) *
              self.bitsingbyte) /
@@ -308,8 +243,6 @@ class Capacity:
 
         self._log_info(f'avubrnonbh = {avubrnonbh}')
 
-        # Store the result
-        self.avubrnonbh_result = avubrnonbh
         return avubrnonbh
 
     def upopbr(self, avubrnonbh, pop):
@@ -327,11 +260,9 @@ class Capacity:
 
         Note:
         """
-        upopbr = avubrnonbh*pop*self.oppopshare/100/self.fb_per_site
+        upopbr = avubrnonbh * pop * self.oppopshare / 100 / self.fb_per_site
         self._log_info(f'upopbr = {upopbr}')
 
-        # Store the result
-        self.upopbr_result = upopbr
         return upopbr
 
     def upoprbu(self, upopbr, brrbpopcd):
@@ -347,15 +278,18 @@ class Capacity:
 
         Note:
         """
-        # Calcualte user population resource blocks utilisation in units.
-        upoprbu = upopbr / brrbpopcd
-
+        if not isinstance(upopbr, list):
+            upopbr = [upopbr]
+        if not isinstance(brrbpopcd, list):
+            brrbpopcd = [brrbpopcd]
+        if len(upopbr) > 1:
+            raise ValueError("upopbr is not of length 1.")
+        
+        # Calculate user population resource blocks utilisation in units.
+        upoprbu = [upopbr[0] / denom for denom in brrbpopcd]
         self._log_info(f'upoprbu = {upoprbu}')
-
-        self.upoprbu_result = upoprbu
-
         return upoprbu
-    
+
     def cellavcap(self, avrbpdsch, upoprbu):
         """
         Cell site available capacity check.
@@ -369,15 +303,16 @@ class Capacity:
 
         Note:
         """
-
+        if not isinstance(avrbpdsch, np.ndarray):
+            avrbpdsch = np.array(avrbpdsch)
+        # Check if upoprbu is not already a NumPy array, convert if necessary
+        if not isinstance(upoprbu, np.ndarray):
+            upoprbu = np.array(upoprbu)
+        
         # Cell site available capacity.
         cellavcap = avrbpdsch - upoprbu
-
-        self._log_info(f'avrbpdsch = {avrbpdsch}')
+        cellavcap = cellavcap.tolist()
         self._log_info(f'cellavcap = {cellavcap}')
-
-        # Store the result
-        self.cellavcap_result = cellavcap
 
         return cellavcap
 
@@ -394,49 +329,46 @@ class Capacity:
 
         Note:
         """
-
-        # Identify if capacity requirement is satisfied.
-        if (cellavcap > rbdlthtarg):
-            sufcapch = True
-        else:
-            sufcapch = False
-
+        if not isinstance(cellavcap, np.ndarray):
+            cellavcap = np.array(cellavcap)
+        if not isinstance(rbdlthtarg, np.ndarray):
+            rbdlthtarg = np.array(rbdlthtarg)
+        
+        sufcapch = cellavcap > rbdlthtarg
+        sufcapch = sufcapch.tolist()
         self._log_info(f'sufcapch = {sufcapch}')
-
-        # Store the result
-        self.sufcapch_result = sufcapch
         return sufcapch
 
     def capacity_checker(self, d, popcd, udatavmonth, pop):
         """
-        Calculates capacity check based on given parameters.
+        Performs a capacity check using the provided parameters.
 
         Parameters:
-        - d (float): Distance to POI for data rate calculation.
-        - popcd (float): Population center distance parameter.
-        - udatavmonth (float): User data volume per month parameter.
+        - d (float): Distance to the Point of Interest (POI) for data rate calculation, in meters.
+        - popcd (float): Population center distance parameter, in meters.
+        - udatavmonth (float): Monthly data usage per user, in gigabytes.
         - pop (float): Population parameter.
 
         Returns:
-        - float: Capacity check result based on the calculations.
+        - tuple: A tuple containing:
+            - float: User population bitrate (upopbr).
+            - float: User population resource block utilization (upoprbu).
+            - float: Available cell capacity (cellavcap).
+            - float: Capacity check result (capcheck).
 
-        Clears intermediary outputs, calculates independent functions including:
-        - `rbdlthtarg`: Data rate target based on `d`.
-        - `brrpopcd`: Bitrate per resource block based on `popcd`.
-        - `avubrnonbh`: Average user bitrate based on `udatavmonth`.
+        This method calculates the following independent functions:
+        - `rbdlthtarg`: Target data rate based on the distance `d`.
+        - `brrpopcd`: Bitrate per resource block based on the population center distance `popcd`.
+        - `avubrnonbh`: Average user bitrate based on the monthly data volume `udatavmonth`.
 
-        Then calculates dependent functions:
-        - `upopbr`: User population bitrate based on `pop` and `avubrnonbh`.
-        - `upoprbu`: User population resource block utilization based on `upopbr` and `brrpopcd`.
-        - `capcheck`: Sufficiency capacity check based on `avrbpdsch`, `upoprbu`, and `rbdlthtarg`.
+        It then calculates the following dependent functions:
+        - `upopbr`: User population bitrate based on the average user bitrate `avubrnonbh` and the population `pop`.
+        - `upoprbu`: User population resource block utilization based on the user population bitrate `upopbr` and the bitrate per resource block `brrpopcd`.
+        - `cellavcap`: Available cell capacity based on `avrbpdsch` and `upoprbu`.
+        - `capcheck`: Capacity sufficiency check based on `cellavcap` and the target data rate `rbdlthtarg`.
 
-        Stores the calculated capacity check result in `self.capcheck_result`.
-
-        Note:
-        - Ensure `self.clear_intermediary_outputs()` has been called to reset any previous calculations.
+        The capacity check result is stored in `self.capcheck_result`.
         """
-        # Clear intermediary outputs from attributes
-        self.clear_intermediary_outputs()
 
         # Independent functions
         rbdlthtarg = self.poiddatareq(d)
@@ -450,7 +382,8 @@ class Capacity:
         capcheck = self.sufcapch(cellavcap, rbdlthtarg)
 
         # Store and return the result
-        return upopbr, upoprbu, cellavcap, capcheck
+        dict_result = {"upopbr": upopbr, "upoprbu": upoprbu, "cellavcap": cellavcap, "capcheck": capcheck}
+        return dict_result
 
     def calculate_buffer_areas(self):
         """
@@ -469,75 +402,16 @@ class Capacity:
 
         Note:
         """
-
-        def create_voronoi_cells(cellsite_gdf, area_gdf):
-            """
-            Creates Voronoi cells for a given set of cell sites and clips them to a specified area.
-
-            Parameters:
-            - cellsite_gdf (GeoDataFrame): GeoDataFrame containing the cell sites with geometries.
-            - area_gdf (GeoDataFrame): GeoDataFrame containing the boundary of the area to clip the Voronoi cells to.
-
-            Returns:
-            - GeoDataFrame: A GeoDataFrame containing the original cell sites with an additional column
-            for the Voronoi polygons clipped to the specified area.
-            """
-            # Extract point data for Voronoi function
-            points = np.array([(point.x, point.y)
-                               for point in cellsite_gdf.geometry])
-            # Extract cellsite ids to assign to Voronoi polygons
-            ids = cellsite_gdf['ict_id'].values
-            bounding_box = area_gdf.geometry.total_bounds
-            # Generate Voronoi polygons
-            voronoi_polygons_with_ids = generate_voronoi_polygons(
-                points, ids, bounding_box)
-            # Create a new GeoDataFrame from the Voronoi polygons
-            voronoi_cellsites = gpd.GeoDataFrame(
-                [{'geometry': poly, 'ict_id': id}
-                    for poly, id in voronoi_polygons_with_ids],
-                crs=cellsite_gdf.crs
-            )
-            # Clip the Voronoi GeoDataFrame with the area
-            clipped_voronoi_cellsites = gpd.clip(
-                voronoi_cellsites, area_gdf.geometry.item())
-            # Merge the clipped Voronoi polygons with the original cellsites
-            buffer_cellsites = cellsite_gdf.merge(
-                clipped_voronoi_cellsites,
-                on='ict_id',
-                how="left",
-                suffixes=(
-                    '',
-                    '_voronoi'))
-            buffer_cellsites = buffer_cellsites.rename(
-                columns={'geometry_voronoi': 'voronoi_polygons'})
-            return buffer_cellsites
-        
-        def get_population_sum(geometry):
-            """
-            Calculates the population sum within a given geometry using a population density raster.
-
-            Parameters:
-            - geometry (shapely.geometry.Polygon): The geometry within which to calculate the population sum.
-
-            Returns:
-            - float: The population sum within the given geometry, or None if an error occurs.
-            """
-            try:
-                population_raster_location = f"{self.input_data_path}/{self.data_files['pop_file']}"
-                stats = zonal_stats(
-                    geometry,
-                    population_raster_location,
-                    stats="sum")
-                return stats[0]['sum']
-            except ValueError as ve:
-                print(f"ValueError occurred (get_population_sum): {ve}")
-                return None
-            except Exception as e:
-                print(f"An error occurred (get_population_sum): {e}")
-                return None
+        def _poi_sufcapch(visibility, buffer_cellsites_result):
+            visibility = visibility.loc[visibility["order"] == 1, :]
+            poi_data_merged = visibility[['poi_id', 'is_visible', 'ground_distance', 'ict_id']].merge(buffer_cellsites_result,
+                                                                                                          left_on='ict_id',
+                                                                                                          right_on='ict_id',
+                                                                                                          how='left').drop(columns="ict_id").set_index('poi_id')
+            return poi_data_merged
 
         # Copy input data
-        poi_data = self.visibility.copy()
+        poi_data = self.poi.copy()
         cellsites = self.cellsites.copy()
         # for distance conversion from meters to degrees
         central_latitude = cellsites['lat'].mean()
@@ -547,8 +421,8 @@ class Capacity:
         cellsites_gdf = gpd.GeoDataFrame(
             geometry=gpd.points_from_xy(
                 x=cellsites.lon,
-                y=cellsites.lat,
-                crs="4326"),
+                y=cellsites.lat),
+            crs="4326",
             data=cellsites)
         cellsites_gdf = cellsites_gdf.to_crs(self.population["crs"])
 
@@ -594,7 +468,7 @@ class Capacity:
                 lambda row: row[f'ring_{radius}'].intersection(row['voronoi_polygons']), axis=1)
             # Calculate population count within clipped ring areas.
             buffer_cellsites[f'pop_clring_{radius}'] = buffer_cellsites[f'clring_{radius}'].apply(
-                get_population_sum)
+                lambda x: get_population_sum(x, f"{self.input_data_path}/{self.data_files['pop']}"))
             # Calculate avubrnonbh, the average user bitrate in non-busy hour in kbps, from country-level statistics
             avubrnonbh = self.avubrnonbh(self.udatavmonth_pu)
             # Calculate user population bitrate in kbps within clipped ring areas.
@@ -605,51 +479,42 @@ class Capacity:
                 lambda row: self.brrbpopcd(row)
             )
             # Calculate user population resource blocks utilisation within clipped ring areas.
-            buffer_cellsites[f'upoprbu_{radius}'] = buffer_cellsites.apply(  
-                lambda row: self.upoprbu(row[f'upopbr_{radius}'], row[f'brrbpopcd_{radius}']), axis=1  
-            )  
+            buffer_cellsites[f'upoprbu_{radius}'] = buffer_cellsites.apply(
+                lambda row: self.upoprbu(row[f'upopbr_{radius}'], row[f'brrbpopcd_{radius}']), axis=1
+            )
         # Calculate total number of cell site required resource blocks
-        upoprbu_columns = buffer_cellsites.filter(regex=r'^upoprbu_')
-        buffer_cellsites['upoprbu_total'] = upoprbu_columns.sum(axis=1)
+        upoprbu_columns = [col for col in buffer_cellsites.columns if col.startswith('upoprbu_')]
+        buffer_cellsites['upoprbu_total'] = buffer_cellsites[upoprbu_columns].apply(lambda row: [sum(x) for x in zip(*row)], axis=1)
 
         # Calculate cell site available capacity
         buffer_cellsites[f'cellavcap'] = buffer_cellsites[f'upoprbu_total'].apply(
             lambda row: self.cellavcap(self.avrbpdsch, row))
-            
+
         # Store the buffer analysis results
-        self.buffer_cellsites_result = buffer_cellsites.set_index('ict_id').drop(columns = 'index')
-        self.poi_sufcapch_result = self.poi_sufcapch(poi_data, self.buffer_cellsites_result)
-        return self.buffer_cellsites_result, self.poi_sufcapch_result
-    
-    def poi_sufcapch(self, poi_data, buffer_cellsites_result):
-        poi_data_merged = poi_data[['poi_id','is_visible','ground_distance_1','cellsite_1']].merge(buffer_cellsites_result, 
-                                     left_on = 'cellsite_1', 
-                                     right_on = 'ict_id', 
-                                     how = 'left').drop(columns="cellsite_1").set_index('poi_id')
-        
-        poi_data_merged['rbdlthtarg'] = poi_data_merged['ground_distance_1'].apply(
+        self.buffer_cellsites_result = buffer_cellsites.set_index('ict_id').drop(columns='index')
+        poi_data_merged = _poi_sufcapch(self.visibility, self.buffer_cellsites_result)
+        poi_data_merged['rbdlthtarg'] = poi_data_merged['ground_distance'].apply(
             lambda row: self.poiddatareq(row)
         )
-
         poi_data_merged['sufcapch'] = poi_data_merged.apply(
-            lambda row: self.sufcapch(row['cellavcap'], row['rbdlthtarg']), axis=1
+            lambda row: self.sufcapch(row['cellavcap'], row['rbdlthtarg'])[0], axis=1
         )
-
-        return poi_data_merged
+        self.poi_sufcapch_result = poi_data_merged
+        return self.buffer_cellsites_result, self.poi_sufcapch_result
 
     def mbbtps(self):
-        """  
+        """
         Reads rows with the latest year data available for both
         mobile-broadband Internet traffic (within the country) and active mobile-broadband subscriptions
         and calculates Mobile broadband internet traffic (within the country) per active mobile broadband subscription
-        per month.    
+        per month.
 
-        Parameters:  
-        - mbbsubscr (dataframe): Active mobile broadband subscriptions (ITU, https://datahub.itu.int/data/?i=11632) 
+        Parameters:
+        - mbbsubscr (dataframe): Active mobile broadband subscriptions (ITU, https://datahub.itu.int/data/?i=11632)
         - mbbtraffic (dataframe): Mobile broadband internet traffic (within the country) in Exabytes (ITU, https://datahub.itu.int/data/?i=13068)
 
-        Returns:  
-        - DataFrame containing mobile broadband internet traffic per subscription per month column in Gigabytes. 
+        Returns:
+        - DataFrame containing mobile broadband internet traffic per subscription per month column in Gigabytes.
         """
         # Combine data tables
         df = pd.merge(self.mbbsubscr, self.mbbtraffic, on=[
@@ -670,7 +535,7 @@ class Capacity:
 
         # Calculate mobile broadband internet traffic per subscription per month column in Gigabytes.
         df['mbb_traffic_per_subscr_per_month'] = df['dataValue_mbbtraffic'] * \
-            1024**3/df['dataValue_mbbsubscr']/12
+            1024**3 / df['dataValue_mbbsubscr'] / 12
 
         # Select relevant columns
         df = df.loc[:, ['entityName', 'entityIso_mbbsubscr', 'dataValue_mbbsubscr',

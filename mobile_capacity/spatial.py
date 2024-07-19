@@ -1,8 +1,9 @@
 import math
 import numpy as np
+import geopandas as gpd
 from shapely.geometry import Polygon
 from scipy.spatial import Voronoi
-
+from rasterstats import zonal_stats
 
 def meters_to_degrees_latitude(meters, latitude):
     """
@@ -70,3 +71,70 @@ def generate_voronoi_polygons(points, ids, bounding_box):
             polygons.append((polygon, ids[point_idx]))
 
     return polygons
+
+
+def create_voronoi_cells(cellsite_gdf, area_gdf):
+    """
+    Creates Voronoi cells for a given set of cell sites and clips them to a specified area.
+
+    Parameters:
+    - cellsite_gdf (GeoDataFrame): GeoDataFrame containing the cell sites with geometries.
+    - area_gdf (GeoDataFrame): GeoDataFrame containing the boundary of the area to clip the Voronoi cells to.
+
+    Returns:
+    - GeoDataFrame: A GeoDataFrame containing the original cell sites with an additional column
+    for the Voronoi polygons clipped to the specified area.
+    """
+    # Extract point data for Voronoi function
+    points = np.array([(point.x, point.y)
+                        for point in cellsite_gdf.geometry])
+    # Extract cellsite ids to assign to Voronoi polygons
+    ids = cellsite_gdf['ict_id'].values
+    bounding_box = area_gdf.geometry.total_bounds
+    # Generate Voronoi polygons
+    voronoi_polygons_with_ids = generate_voronoi_polygons(
+        points, ids, bounding_box)
+    # Create a new GeoDataFrame from the Voronoi polygons
+    voronoi_cellsites = gpd.GeoDataFrame(
+        [{'geometry': poly, 'ict_id': id}
+            for poly, id in voronoi_polygons_with_ids],
+        crs=cellsite_gdf.crs
+    )
+    # Clip the Voronoi GeoDataFrame with the area
+    clipped_voronoi_cellsites = gpd.clip(
+        voronoi_cellsites, area_gdf.geometry.item())
+    # Merge the clipped Voronoi polygons with the original cellsites
+    buffer_cellsites = cellsite_gdf.merge(
+        clipped_voronoi_cellsites,
+        on='ict_id',
+        how="left",
+        suffixes=(
+            '',
+            '_voronoi'))
+    buffer_cellsites = buffer_cellsites.rename(
+        columns={'geometry_voronoi': 'voronoi_polygons'})
+    return buffer_cellsites
+
+
+def get_population_sum(geometry, rasterpath):
+    """
+    Calculates the population sum within a given geometry using a population density raster.
+
+    Parameters:
+    - geometry (shapely.geometry.Polygon): The geometry within which to calculate the population sum.
+
+    Returns:
+    - float: The population sum within the given geometry, or None if an error occurs.
+    """
+    try:
+        stats = zonal_stats(
+            geometry,
+            rasterpath,
+            stats="sum")
+        return stats[0]['sum']
+    except ValueError as ve:
+        print(f"ValueError occurred (get_population_sum): {ve}")
+        return None
+    except Exception as e:
+        print(f"An error occurred (get_population_sum): {e}")
+        return None
