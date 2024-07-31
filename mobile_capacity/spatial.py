@@ -5,6 +5,7 @@ from shapely.geometry import Polygon
 from scipy.spatial import Voronoi
 from rasterstats import zonal_stats
 
+
 def meters_to_degrees_latitude(meters, latitude):
     """
     Calculates the number of meters in one degree of longitude at the given latitude
@@ -87,7 +88,7 @@ def create_voronoi_cells(cellsite_gdf, area_gdf):
     """
     # Extract point data for Voronoi function
     points = np.array([(point.x, point.y)
-                        for point in cellsite_gdf.geometry])
+                       for point in cellsite_gdf.geometry])
     # Extract cellsite ids to assign to Voronoi polygons
     ids = cellsite_gdf['ict_id'].values
     bounding_box = area_gdf.geometry.total_bounds

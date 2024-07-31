@@ -1,16 +1,9 @@
-from mobile_capacity.spatial import meters_to_degrees_latitude, create_voronoi_cells, create_voronoi_cells, get_population_sum
+from mobile_capacity.spatial import meters_to_degrees_latitude, create_voronoi_cells, get_population_sum
 from mobile_capacity.utils import load_data, initialize_logger
-import logging
 import numpy as np
 import pandas as pd
 import geopandas as gpd
-import sys
 import os
-from functools import wraps
-import rasterio
-from rasterio.transform import from_origin
-from datetime import datetime
-from scipy.spatial import cKDTree
 
 
 class Capacity:
@@ -284,7 +277,7 @@ class Capacity:
             brrbpopcd = [brrbpopcd]
         if len(upopbr) > 1:
             raise ValueError("upopbr is not of length 1.")
-        
+
         # Calculate user population resource blocks utilisation in units.
         upoprbu = [upopbr[0] / denom for denom in brrbpopcd]
         self._log_info(f'upoprbu = {upoprbu}')
@@ -308,7 +301,7 @@ class Capacity:
         # Check if upoprbu is not already a NumPy array, convert if necessary
         if not isinstance(upoprbu, np.ndarray):
             upoprbu = np.array(upoprbu)
-        
+
         # Cell site available capacity.
         cellavcap = avrbpdsch - upoprbu
         cellavcap = cellavcap.tolist()
@@ -333,7 +326,7 @@ class Capacity:
             cellavcap = np.array(cellavcap)
         if not isinstance(rbdlthtarg, np.ndarray):
             rbdlthtarg = np.array(rbdlthtarg)
-        
+
         sufcapch = cellavcap > rbdlthtarg
         sufcapch = sufcapch.tolist()
         self._log_info(f'sufcapch = {sufcapch}')
@@ -405,13 +398,12 @@ class Capacity:
         def _poi_sufcapch(visibility, buffer_cellsites_result):
             visibility = visibility.loc[visibility["order"] == 1, :]
             poi_data_merged = visibility[['poi_id', 'is_visible', 'ground_distance', 'ict_id']].merge(buffer_cellsites_result,
-                                                                                                          left_on='ict_id',
-                                                                                                          right_on='ict_id',
-                                                                                                          how='left').drop(columns="ict_id").set_index('poi_id')
+                                                                                                      left_on='ict_id',
+                                                                                                      right_on='ict_id',
+                                                                                                      how='left').drop(columns="ict_id").set_index('poi_id')
             return poi_data_merged
 
         # Copy input data
-        poi_data = self.poi.copy()
         cellsites = self.cellsites.copy()
         # for distance conversion from meters to degrees
         central_latitude = cellsites['lat'].mean()
@@ -487,7 +479,7 @@ class Capacity:
         buffer_cellsites['upoprbu_total'] = buffer_cellsites[upoprbu_columns].apply(lambda row: [sum(x) for x in zip(*row)], axis=1)
 
         # Calculate cell site available capacity
-        buffer_cellsites[f'cellavcap'] = buffer_cellsites[f'upoprbu_total'].apply(
+        buffer_cellsites['cellavcap'] = buffer_cellsites['upoprbu_total'].apply(
             lambda row: self.cellavcap(self.avrbpdsch, row))
 
         # Store the buffer analysis results

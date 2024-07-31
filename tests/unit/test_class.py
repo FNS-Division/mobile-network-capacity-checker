@@ -1,5 +1,4 @@
 from mobile_capacity.capacity import Capacity
-import os
 import pytest
 import numpy as np
 

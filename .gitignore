@@ -1,18 +1,45 @@
-/__pycache__
+# Ignore everything in data/input_data
+data/input_data/*
+
+# But track these specific files in data/input_data
+!data/input_data/cell-sites.csv
+!data/input_data/MobileBB_Traffic_per_Subscr_per_Month.csv
+!data/input_data/points-of-interest.csv
+!data/input_data/visibility.csv
+!data/input_data/_bwdistance_km.csv
+!data/input_data/_bwdlachievbr_kbps.csv
+!data/input_data/population.tif
+!data/input_data/area.gpkg
+!data/input_data/active-mobile-broadband-subscriptions.csv
+!data/input_data/mobile-broadband-internet-traffic-within-the-country.csv
+
+# Python cache files
 __pycache__/
 **/__pycache__/
+*.pyc
+
+# Jupyter Notebook checkpoints
 .ipynb_checkpoints
 .ipynb_aml_checkpoints
 */.ipynb_checkpoints/*
 */.ipynb_aml_checkpoints/*
+
+# System files
+.DS_Store
+
+# IDE files
+.idea/
+
+# Configuration files
+config*
+
+# Log files
+logs/*
+
+# Azure ML specific files
 *.amltmp
 *.amlignore
 *.amlignore.amltmp
-.DS_Store
-.idea/
-config*
-*.pyc
-logs/*
-#Ignore all CSV files starting with bw in the input_data foldes
-data/input_data/bw*.csv
+
+# Ignore all files in the output_data folder
 data/output_data/*
