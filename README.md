@@ -1,4 +1,3 @@
-
 ![Logo](https://www.itu.int/web/pp-18/assets/logo/itu_logo.png)
 
 ![BSD-3 License](https://img.shields.io/pypi/l/prtg-pyprobe) [![Python](https://img.shields.io/badge/Python-3776AB.svg?style=flat&logo=Python&logoColor=white)](https://www.python.org/)
@@ -27,16 +26,14 @@ mobile-network-capacity-model
 ├── LICENSE.txt
 ├── data
 │   ├── input_data
-│   │   ├── ESP-1697915895-xs2u-pointofinterest.csv
-│   │   ├── ESP-1697916284-6wv8-cellsite.csv
-│   │   ├── ESP-1719230627-szhl-visibility.csv
+│   │   ├── points_of_interest.csv
+│   │   ├── cell-sites.csv
+│   │   ├── visibility.csv
 │   │   ├── MobileBB_Traffic_per_Subscr_per_Month.csv
-│   │   ├── active-mobile-broadband-subscriptions_1711147050645.csv
+│   │   ├── active-mobile-broadband-subscriptions.csv
 │   │   ├── area.gpkg
-│   │   ├── bwdistance_km.csv
-│   │   ├── bwdlachievbr_kbps.csv
-│   │   ├── bwrsrp_dbm.csv
-│   │   ├── bwulachievbr_kbps.csv
+│   │   ├── _bwdistance_km.csv
+│   │   ├── _bwdlachievbr_kbps.csv
 │   │   └── population.tif
 │   └── output_data
 │       ├── MobileBB_Traffic_per_Subscr_per_Month.csv
