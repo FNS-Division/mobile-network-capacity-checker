@@ -26,7 +26,7 @@ def init_variable_values():
         'bw': 20,  # Bandwidth, MHz
         'rb_num_multiplier': 5,
         'cco': 18,  # Control channel overheads in %
-        # 'cells_per_site': 3, # Number of cells per site
+        'mbb_subscr': 113, # Active mobile-broadband subscriptions per 100 people
         'fb_per_site': 3,  # Number of frequency bands on site
         'angles_num': 360,  # PLACEHOLDER # Set the number of angles to be used for azimuth analysis
         'rotation_angle': 60,  # PLACEHOLDER # Define the rotation angle to create a sector +/-rotation_angle degrees clockwise and counter-clockwise

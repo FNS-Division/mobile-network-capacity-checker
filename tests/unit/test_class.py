@@ -75,7 +75,7 @@ def test_upopbr(init_variable_values, avubrnonbh=19.62247, pop=10000):
     upopbr_calc = round(mobilecapacity.upopbr(avubrnonbh, pop), 2)
 
     # Expected results (hardcoded for comparison)
-    upopbr_expected = 32704.12
+    upopbr_expected = 36955.65
 
     # Compare calculation results with expected results
     assert upopbr_calc == upopbr_expected, f"Expected {upopbr_expected} but got {upopbr_calc}"

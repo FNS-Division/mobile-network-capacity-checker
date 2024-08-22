@@ -9,7 +9,7 @@ import os
 class Capacity:
     def __init__(self, data_files: dict, country_name: str,
                  bw, cco, fb_per_site, max_radius, min_radius, radius_step, angles_num,
-                 rotation_angle, dlthtarg, nonbhu, root_dir, rb_num_multiplier=5,
+                 rotation_angle, dlthtarg, mbb_subscr, nonbhu, root_dir, rb_num_multiplier=5,
                  nbhours=10, oppopshare=50, enable_logging=False):
 
         # Data storage
@@ -34,9 +34,9 @@ class Capacity:
         self.angles_num = angles_num  # Number of angles PLACEHOLDER
         self.rotation_angle = rotation_angle  # Rotation angle in degrees PLACEHOLDER
         self.dlthtarg = dlthtarg  # Download throughput target in Mbps
+        self.mbb_subscr = mbb_subscr # Active mobile-broadband subscriptions per 100 people
         self.oppopshare = oppopshare  # Percentage of population using operator services in %
         self.nonbhu = nonbhu  # Connection usage in non-busy hour in %
-        self.days = 30.4  # Days in one month
         self.nbhours = nbhours  # number of non-busy hours per day
         self.rb_num_multiplier = rb_num_multiplier  # Resource block number multiplier
         self.max_radius = max_radius  # maximum buffer radius
@@ -44,6 +44,7 @@ class Capacity:
         self.radius_step = radius_step  # maximum buffer radius
 
         # Constants
+        self.days = 30.4  # Days in one month
         self.minperhour = 60  # number of minutes per hour
         self.secpermin = 60  # number of seconds per minute
         self.bitsingbit = 1000000000  # bits in one gigabit
@@ -125,7 +126,7 @@ class Capacity:
             poi_distances = [poi_distances]
 
         # Convert input distances to numpy array
-        poi_distances = np.array(poi_distances) / 1000
+        poi_distances = np.array(poi_distances) / 1000 # converts distances in meters to kilometers
 
         # Retrieve distance and bitrate arrays for the given bandwidth
         distances_array = self.bwdistance_km[[f'{self.bw}MHz']].values.flatten()
@@ -253,7 +254,7 @@ class Capacity:
 
         Note:
         """
-        upopbr = avubrnonbh * pop * self.oppopshare / 100 / self.fb_per_site
+        upopbr = avubrnonbh * pop * (self.mbb_subscr/100) * (self.oppopshare / 100) / self.fb_per_site
         self._log_info(f'upopbr = {upopbr}')
 
         return upopbr
