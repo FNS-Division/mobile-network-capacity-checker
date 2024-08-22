@@ -1,5 +1,9 @@
-from mobile_capacity.spatial import meters_to_degrees_latitude, create_voronoi_cells, get_population_sum
-from mobile_capacity.utils import load_data, initialize_logger
+from mobile_capacity.spatial import meters_to_degrees_latitude, create_voronoi_cells, vectorized_population_sum
+from mobile_capacity.utils import initialize_logger
+from mobile_capacity.handlers.populationdatahandler import PopulationDataHandler
+from mobile_capacity.entities.pointofinterest import PointOfInterestCollection
+from mobile_capacity.entities.cellsite import CellSiteCollection
+from mobile_capacity.entities.visibilitypair import VisibilityPairCollection
 import numpy as np
 import pandas as pd
 import geopandas as gpd
@@ -7,34 +11,36 @@ import os
 
 
 class Capacity:
-    def __init__(self, data_files: dict, country_name: str,
-                 bw, cco, fb_per_site, max_radius, min_radius, radius_step, angles_num,
-                 rotation_angle, dlthtarg, mbb_subscr, nonbhu, root_dir, rb_num_multiplier=5,
-                 nbhours=10, oppopshare=50, enable_logging=False):
-
-        # Data storage
-        self.root_dir = root_dir
-        self.input_data_path = os.path.join(root_dir, 'data', 'input_data')
-        self.output_data_path = os.path.join(root_dir, 'data', 'output_data')
-        self.data_files = data_files
-
-        # Logger
-        self.logger = None
-        if enable_logging:
-            self.logger = initialize_logger(__name__)
+    def __init__(self,
+                 country_code: str,
+                 data_dir: str,
+                 logs_dir: str,
+                 poi: PointOfInterestCollection,
+                 cellsites: CellSiteCollection,
+                 visibility: VisibilityPairCollection,
+                 bw, cco, fb_per_site, max_radius, min_radius, radius_step, angles_num, rotation_angle, dlthtarg, nonbhu, mbb_subscr,
+                 rb_num_multiplier: int = 5,
+                 area: gpd.GeoDataFrame = None,
+                 dataset_year: int = 2020,
+                 one_km_res: bool = True,
+                 un_adjusted: bool = True,
+                 nbhours: int = 10,
+                 oppopshare: int = 50,
+                 enable_logging: bool = False,
+                 use_confidential_data: bool = False):
 
         # Input validation
         self._validate_input(bw)
 
         # Parameters
-        self.country_name = country_name  # Country name
+        self.country_code = country_code  # Country ISO3 code
         self.bw = bw  # Bandwidth in MHz
         self.cco = cco  # Control channel overhead in %
         self.fb_per_site = fb_per_site  # Number of frequency bands per site
         self.angles_num = angles_num  # Number of angles PLACEHOLDER
         self.rotation_angle = rotation_angle  # Rotation angle in degrees PLACEHOLDER
         self.dlthtarg = dlthtarg  # Download throughput target in Mbps
-        self.mbb_subscr = mbb_subscr # Active mobile-broadband subscriptions per 100 people
+        self.mbb_subscr = mbb_subscr  # Active mobile-broadband subscriptions per 100 people
         self.oppopshare = oppopshare  # Percentage of population using operator services in %
         self.nonbhu = nonbhu  # Connection usage in non-busy hour in %
         self.nbhours = nbhours  # number of non-busy hours per day
@@ -51,20 +57,57 @@ class Capacity:
         self.bitsinkbit = 1000  # bits in kilobit
         self.bitsingbyte = 8589934592  # bits in one gigabyte
 
-        # Load data using the imported function
-        loaded_data = load_data(self.root_dir, self.data_files, self.logger)
+        # Population data handler variables
+        self.dataset_year = dataset_year
+        self.one_km_res = one_km_res
+        self.un_adjusted = un_adjusted
+        self.data_dir = data_dir
+        self.logs_dir = logs_dir
+
+        # Logger
+        self.enable_logging = enable_logging
+        self.logger = None
+        if self.enable_logging:
+            self.logger = initialize_logger(self.logs_dir)
+
+        # Set up the population data handler, and get population data
+        self.population_data_handler = PopulationDataHandler(
+            data_dir=os.path.join(self.data_dir, 'input_data', 'population'),
+            country_code=self.country_code,
+            dataset_year=self.dataset_year,
+            one_km_res=self.one_km_res,
+            un_adjusted=self.un_adjusted,
+            logger=self.logger,
+            enable_logging=self.enable_logging)
+        self.population_data = self._get_population_data()
 
         # Assign loaded data to class attributes
-        self.bwdistance_km = loaded_data['bwdistance_km']
-        self.bwdlachievbr = loaded_data['bwdlachievbr']
-        self.cellsites = loaded_data['cellsites']
-        self.mbbt = loaded_data['mbbt']
-        self.poi = loaded_data['poi']
-        self.visibility = loaded_data['poi_visibility']
-        self.mbbsubscr = loaded_data['mbbsubscr']
-        self.mbbtraffic = loaded_data['mbbtraffic']
-        self.area = loaded_data['area']
-        self.population = loaded_data['population']
+        self.poi = poi.data
+        self.cellsites = cellsites.data
+        self.visibility = visibility.data
+        self.area = area
+        self.mbbt = pd.read_csv("https://zstagigaprodeuw1.blob.core.windows.net/gigainframapkit-public-container/mobile_capacity_data/MobileBB_Traffic_per_Subscr_per_Month.csv")
+        self.mbbsubscr = pd.read_csv(
+            "https://zstagigaprodeuw1.blob.core.windows.net/gigainframapkit-public-container/mobile_capacity_data/active-mobile-broadband-subscriptions.csv")
+        self.mbbtraffic = pd.read_csv(
+            "https://zstagigaprodeuw1.blob.core.windows.net/gigainframapkit-public-container/mobile_capacity_data/mobile-broadband-internet-traffic-within-the-country.csv")
+
+        if use_confidential_data:
+            self.bwdistance_km = pd.read_csv(os.path.join(self.data_dir, 'input_data', 'bwdistance_km.csv'))
+            self.bwdlachievbr = pd.read_csv(os.path.join(self.data_dir, 'input_data', 'bwdlachievbr_kbps.csv'))
+        else:
+            self.bwdistance_km = pd.read_csv("https://zstagigaprodeuw1.blob.core.windows.net/gigainframapkit-public-container/mobile_capacity_data/_bwdistance_km.csv")
+            self.bwdlachievbr = pd.read_csv("https://zstagigaprodeuw1.blob.core.windows.net/gigainframapkit-public-container/mobile_capacity_data/_bwdlachievbr_kbps.csv")
+
+    def _get_population_data(self):
+        """
+        Property that loads and returns population data for the given country and year.
+        """
+        pop_gdf = self.population_data_handler.population_data
+        pop_gdf = gpd.GeoDataFrame(pop_gdf["population"],
+                                   geometry=gpd.points_from_xy(pop_gdf["lon"], pop_gdf["lat"]),
+                                   crs="EPSG:4326")
+        return pop_gdf
 
     def _validate_input(self, bw):
         """Validates the bandwidth (bw) parameter."""
@@ -82,16 +125,16 @@ class Capacity:
         """
         Returns average mobile broadband user data traffic volume per month in GBs (Gigabytes) for the latest year in the ITU dataset.
         """
-        return self.mbbt.loc[self.mbbt["entityName"]
-                             == self.country_name, "mbb_traffic_per_subscr_per_month"].item()
+        return self.mbbt.loc[self.mbbt["entityIso_mbbsubscr"]
+                             == self.country_code, "mbb_traffic_per_subscr_per_month"].item()
 
     @property
     def udatavmonth_year(self):
         """
         Returns average monthly mobile broadband user data traffic volume in gigabytes (GB).
         """
-        return self.mbbt.loc[self.mbbt["entityName"]
-                             == self.country_name, "dataYear"].item()
+        return self.mbbt.loc[self.mbbt["entityIso_mbbsubscr"]
+                             == self.country_code, "dataYear"].item()
 
     @property
     def nrb(self):
@@ -113,7 +156,6 @@ class Capacity:
 
         Parameters:
         - poi_distances (list): List of POI distances in meters, can contain a single or multiple distances.
-        - type (str): Type of calculation, either "poidatareq" or "brrpopcd".
 
         Returns:
         - np.ndarray: Array of downlink bitrates corresponding to each POI distance.
@@ -126,7 +168,7 @@ class Capacity:
             poi_distances = [poi_distances]
 
         # Convert input distances to numpy array
-        poi_distances = np.array(poi_distances) / 1000 # converts distances in meters to kilometers
+        poi_distances = np.array(poi_distances) / 1000  # converts distances in meters to kilometers
 
         # Retrieve distance and bitrate arrays for the given bandwidth
         distances_array = self.bwdistance_km[[f'{self.bw}MHz']].values.flatten()
@@ -254,7 +296,7 @@ class Capacity:
 
         Note:
         """
-        upopbr = avubrnonbh * pop * (self.mbb_subscr/100) * (self.oppopshare / 100) / self.fb_per_site
+        upopbr = avubrnonbh * pop * (self.mbb_subscr / 100) * (self.oppopshare / 100) / self.fb_per_site
         self._log_info(f'upopbr = {upopbr}')
 
         return upopbr
@@ -396,28 +438,54 @@ class Capacity:
 
         Note:
         """
-        def _poi_sufcapch(visibility, buffer_cellsites_result):
-            visibility = visibility.loc[visibility["order"] == 1, :]
-            poi_data_merged = visibility[['poi_id', 'is_visible', 'ground_distance', 'ict_id']].merge(buffer_cellsites_result,
-                                                                                                      left_on='ict_id',
-                                                                                                      right_on='ict_id',
-                                                                                                      how='left').drop(columns="ict_id").set_index('poi_id')
+        def _poi_sufcapch(poi, visibility, buffer_cellsites_result):
+            """
+            Process and merge POI, visibility, and cell site data.
+
+            Args:
+            poi (DataFrame): POI data with 'poi_id', 'lat', and 'lon'.
+            visibility (DataFrame): Visibility data with 'poi_id', 'order', 'ground_distance', and 'ict_id'.
+            buffer_cellsites_result (DataFrame): Cell site data with 'ict_id' and other relevant columns.
+
+            Returns:
+            DataFrame: Merged and processed data indexed by 'poi_id'.
+            """
+            # Filter visibility DataFrame to include only rows where order is 1
+            visibility_filtered = visibility.loc[visibility["order"] == 1, :]
+
+            # Merge POI DataFrame with filtered visibility DataFrame on 'poi_id'
+            poi_merged = poi[["poi_id", "lat", "lon"]].merge(visibility_filtered, on="poi_id", how="left")
+
+            # Drop 'lat' and 'lon' columns from buffer_cellsites_result
+            buffer_cellsites_result_cleaned = buffer_cellsites_result.drop(columns=["lat", "lon"], inplace=False)
+
+            # Merge the POI data with the cleaned buffer_cellsites_result on 'ict_id'
+            poi_data_merged = (
+                poi_merged[['poi_id', 'lat', 'lon', 'ground_distance', 'ict_id']]
+                .merge(buffer_cellsites_result_cleaned, on='ict_id', how='left')
+                .drop(columns="ict_id")
+                .set_index('poi_id')
+            )
+
             return poi_data_merged
 
         # Copy input data
         cellsites = self.cellsites.copy()
-        # for distance conversion from meters to degrees
+        visibility = self.visibility.copy()
+        poi = self.poi.copy()
+
+        # For distance conversion from meters to degrees
         central_latitude = cellsites['lat'].mean()
 
         # Convert cell sites to a GeoDataFrame - assuming the input data used the EPSG 4326 CRS
-        # Re-project to the same CRS as the population raster
+        # Re-project to the same CRS as the population vector data
         cellsites_gdf = gpd.GeoDataFrame(
             geometry=gpd.points_from_xy(
                 x=cellsites.lon,
                 y=cellsites.lat),
             crs="4326",
             data=cellsites)
-        cellsites_gdf = cellsites_gdf.to_crs(self.population["crs"])
+        cellsites_gdf = cellsites_gdf.to_crs(self.population_data.crs)
 
         # Drop duplicated ict_ids rows from cellsites to avoid redundancy
         # during Voronoi polygons generation
@@ -460,8 +528,7 @@ class Capacity:
             buffer_cellsites[f'clring_{radius}'] = buffer_cellsites.apply(
                 lambda row: row[f'ring_{radius}'].intersection(row['voronoi_polygons']), axis=1)
             # Calculate population count within clipped ring areas.
-            buffer_cellsites[f'pop_clring_{radius}'] = buffer_cellsites[f'clring_{radius}'].apply(
-                lambda x: get_population_sum(x, f"{self.input_data_path}/{self.data_files['pop']}"))
+            buffer_cellsites[f'pop_clring_{radius}'] = vectorized_population_sum(buffer_cellsites, self.population_data, radius)
             # Calculate avubrnonbh, the average user bitrate in non-busy hour in kbps, from country-level statistics
             avubrnonbh = self.avubrnonbh(self.udatavmonth_pu)
             # Calculate user population bitrate in kbps within clipped ring areas.
@@ -485,7 +552,7 @@ class Capacity:
 
         # Store the buffer analysis results
         self.buffer_cellsites_result = buffer_cellsites.set_index('ict_id').drop(columns='index')
-        poi_data_merged = _poi_sufcapch(self.visibility, self.buffer_cellsites_result)
+        poi_data_merged = _poi_sufcapch(poi, visibility, self.buffer_cellsites_result)
         poi_data_merged['rbdlthtarg'] = poi_data_merged['ground_distance'].apply(
             lambda row: self.poiddatareq(row)
         )

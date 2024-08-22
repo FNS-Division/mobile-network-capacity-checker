@@ -57,7 +57,7 @@ mobile-network-capacity-model
 ## Prerequisites
 
 Before you begin, ensure you have the following installed:
-- Python 3.x
+- Python 3.9
 - Conda
 - Jupyter Notebook or JupyterLab
 
@@ -97,6 +97,16 @@ cd mobile-network-capacity-model
 conda env create --file environment.yml
 conda activate mobilecapacityenv
 ```
+
+## Preparing your data
+
+In order to conduct your analysis, you will need to provide the tool with the following geospatial data:
+
+- Points of interest
+- Cell sites
+- Cell site to point of interest visibility data
+
+We have provided data templates in the [data templates](data_templates) folder, which specify the required columns for each dataset and the accepted values.
 
 ## Running your analysis
 
@@ -151,7 +161,6 @@ nbstripout --status
 
 ## Support
 If you need help or have any questions, please contact [fns@itu.int](fns@itu.int).
-
 
 ## License
 

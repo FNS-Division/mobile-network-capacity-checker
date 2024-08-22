@@ -1,0 +1,12 @@
+dataset,required column,description
+points-of-interest,poi_id,unique identifier for each point of interest
+points-of-interest,lat,latitude (WGS 84)
+points-of-interest,lon,longitude (WGS 84)
+cell-sites,ict_id,unique identifier for each cell site
+cell-sites,lat,latitude (WGS 84)
+cell-sites,lon,longitude (WGS 84)
+cell-sites,radio type,"either 3G, 4G or 5G"
+visibility,poi_id,unique identifier for each point of interest
+visibility,ict_id,unique identifier for each cell site
+visibility,ground_distance,distance between each point of interest and cell site pair
+visibility,order,"ranking of each point of interest and cell site pair according to distance, in increasing order (1=closest cell site)"

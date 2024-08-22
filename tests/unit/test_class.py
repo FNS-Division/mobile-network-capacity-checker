@@ -1,10 +1,8 @@
-from mobile_capacity.capacity import Capacity
 import pytest
 import numpy as np
 
 
-def test_nrb(init_variable_values):
-    mobilecapacity = Capacity(**init_variable_values)
+def test_nrb(mobilecapacity):
     # Perform calculations
     nrb_calc = mobilecapacity.nrb
     # Expected results (hardcoded for comparison)
@@ -13,8 +11,7 @@ def test_nrb(init_variable_values):
     assert nrb_calc == nrb_expected, f"Expected {nrb_expected} but got {nrb_calc}"
 
 
-def test_avrbpdsch(init_variable_values):
-    mobilecapacity = Capacity(**init_variable_values)
+def test_avrbpdsch(mobilecapacity):
     # Perform calculations
     avrbpdsch_calc = mobilecapacity.avrbpdsch
     # Expected results (hardcoded for comparison)
@@ -27,10 +24,7 @@ def test_avrbpdsch(init_variable_values):
     (7000, np.inf),
     (2000, 22.39)
 ])
-def test_poiddatareq(init_variable_values, d, expected):
-
-    mobilecapacity = Capacity(**init_variable_values)
-
+def test_poiddatareq(mobilecapacity, d, expected):
     # Perform calculation
     poiddatareq_calc = round(mobilecapacity.poiddatareq(d=d)[0], 2) \
         if expected is not None else mobilecapacity.poiddatareq(d=d)[0]
@@ -39,10 +33,7 @@ def test_poiddatareq(init_variable_values, d, expected):
     assert poiddatareq_calc == expected, f"Expected {expected} but got {poiddatareq_calc}"
 
 
-def test_brrbpopcd(init_variable_values, popcd=5000):
-
-    mobilecapacity = Capacity(**init_variable_values)
-
+def test_brrbpopcd(mobilecapacity, popcd=5000):
     # Perform calculation
     brrbpopcd_calc = round(mobilecapacity.brrbpopcd(popcd)[0], 2)
 
@@ -53,10 +44,7 @@ def test_brrbpopcd(init_variable_values, popcd=5000):
     assert brrbpopcd_calc == brrbpopcd_expected, f"Expected {brrbpopcd_expected} but got {brrbpopcd_calc}"
 
 
-def test_avubrnonbh(init_variable_values, udatavmonth=5):
-
-    mobilecapacity = Capacity(**init_variable_values)
-
+def test_avubrnonbh(mobilecapacity, udatavmonth=5):
     # Perform calculation
     avubrnonbh_calc = round(mobilecapacity.avubrnonbh(udatavmonth), 2)
 
@@ -67,10 +55,7 @@ def test_avubrnonbh(init_variable_values, udatavmonth=5):
     assert avubrnonbh_calc == avubrnonbh_expected, f"Expected {avubrnonbh_expected} but got {avubrnonbh_calc}"
 
 
-def test_upopbr(init_variable_values, avubrnonbh=19.62247, pop=10000):
-
-    mobilecapacity = Capacity(**init_variable_values)
-
+def test_upopbr(mobilecapacity, avubrnonbh=19.62247, pop=10000):
     # Perform calculation
     upopbr_calc = round(mobilecapacity.upopbr(avubrnonbh, pop), 2)
 
@@ -81,10 +66,7 @@ def test_upopbr(init_variable_values, avubrnonbh=19.62247, pop=10000):
     assert upopbr_calc == upopbr_expected, f"Expected {upopbr_expected} but got {upopbr_calc}"
 
 
-def test_upoprbu(init_variable_values, upopbr=32704.12, brrbpopcd=2081.84):
-
-    mobilecapacity = Capacity(**init_variable_values)
-
+def test_upoprbu(mobilecapacity, upopbr=32704.12, brrbpopcd=2081.84):
     # Perform calculation
     upoprbu_calc = round(mobilecapacity.upoprbu(upopbr, brrbpopcd)[0], 2)
 
@@ -95,10 +77,7 @@ def test_upoprbu(init_variable_values, upopbr=32704.12, brrbpopcd=2081.84):
     assert upoprbu_calc == upoprbu_expected, f"Expected {upoprbu_expected} but got {upoprbu_calc}"
 
 
-def test_cellavcap(init_variable_values, avrbpdsch=82, upoprbu=15.71):
-
-    mobilecapacity = Capacity(**init_variable_values)
-
+def test_cellavcap(mobilecapacity, avrbpdsch=82, upoprbu=15.71):
     # Perform calculation
     cellavcap_calc = round(mobilecapacity.cellavcap(avrbpdsch, upoprbu), 2)
 
@@ -113,10 +92,7 @@ def test_cellavcap(init_variable_values, avrbpdsch=82, upoprbu=15.71):
     (9.29, 10.93, False),  # Test case 1
     (90, 85, True)    # Test case 2
 ])
-def test_sufcapch(init_variable_values, sufcapch_expected, cellavcap, rbdlthtarg):
-
-    mobilecapacity = Capacity(**init_variable_values)
-
+def test_sufcapch(mobilecapacity, sufcapch_expected, cellavcap, rbdlthtarg):
     # Perform the calculation.
     sufcapch_calc = mobilecapacity.sufcapch(cellavcap, rbdlthtarg)
 

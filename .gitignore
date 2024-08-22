@@ -1,17 +1,18 @@
+# Ignore documentation files
+documentation/*
+
+# Ignore everything in data/auxiliary_data
+data/auxiliary_data/*
+
 # Ignore everything in data/input_data
 data/input_data/*
 
 # But track these specific files in data/input_data
 !data/input_data/cell-sites.csv
-!data/input_data/MobileBB_Traffic_per_Subscr_per_Month.csv
 !data/input_data/points-of-interest.csv
 !data/input_data/visibility.csv
-!data/input_data/_bwdistance_km.csv
-!data/input_data/_bwdlachievbr_kbps.csv
-!data/input_data/population.tif
 !data/input_data/area.gpkg
-!data/input_data/active-mobile-broadband-subscriptions.csv
-!data/input_data/mobile-broadband-internet-traffic-within-the-country.csv
+!data/input_data/mobile-coverage.gpkg
 
 # Python cache files
 __pycache__/
