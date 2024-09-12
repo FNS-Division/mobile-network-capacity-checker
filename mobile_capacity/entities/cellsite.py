@@ -31,6 +31,7 @@ class CellSite(Entity):
                  ict_id: str,
                  lat: float,
                  lon: float,
+                 antenna_height: float,
                  radio_type,
                  entity_type: str = 'Cell Site',
                  **kwargs):
@@ -39,11 +40,12 @@ class CellSite(Entity):
         self.ict_id = ict_id
         self.lat = lat
         self.lon = lon
+        self.antenna_height = antenna_height
         self.radio_type = radio_type
 
     def __repr__(self):
         return f"CellSite(ict_id={self.ict_id}, lat={self.lat}, lon={self.lon},\
-            radio_type= {self.radio_type}, attributes={self.additional_fields})"
+            radio_type= {self.radio_type}, antenna_height: {self.antenna_height}, attributes={self.additional_fields})"
 
 
 class CellSiteCollection(EntityCollection):

@@ -1,9 +1,11 @@
 from mobile_capacity.spatial import meters_to_degrees_latitude, create_voronoi_cells, vectorized_population_sum
 from mobile_capacity.utils import initialize_logger
 from mobile_capacity.handlers.populationdatahandler import PopulationDataHandler
+from mobile_capacity.handlers.srtmdatahandler import SRTMDataHandler
 from mobile_capacity.entities.pointofinterest import PointOfInterestCollection
 from mobile_capacity.entities.cellsite import CellSiteCollection
 from mobile_capacity.entities.visibilitypair import VisibilityPairCollection
+from mobile_capacity.visibility import Visibility
 import numpy as np
 import pandas as pd
 import geopandas as gpd
@@ -17,9 +19,11 @@ class Capacity:
                  logs_dir: str,
                  poi: PointOfInterestCollection,
                  cellsites: CellSiteCollection,
-                 visibility: VisibilityPairCollection,
                  bw, cco, fb_per_site, max_radius, min_radius, radius_step, angles_num, rotation_angle, dlthtarg, nonbhu, mbb_subscr,
+                 cellsite_search_radius: int = 35000,
+                 poi_antenna_height: int = 15,
                  rb_num_multiplier: int = 5,
+                 visibility: VisibilityPairCollection = None,
                  area: gpd.GeoDataFrame = None,
                  dataset_year: int = 2020,
                  one_km_res: bool = True,
@@ -49,6 +53,10 @@ class Capacity:
         self.min_radius = min_radius  # maximum buffer radius
         self.radius_step = radius_step  # maximum buffer radius
 
+        # Visibility analysis parameters
+        self.cellsite_search_radius = cellsite_search_radius  # Cell site search radius in meters
+        self.poi_antenna_height = poi_antenna_height  # Point of interest antenna height in meters
+
         # Constants
         self.days = 30.4  # Days in one month
         self.minperhour = 60  # number of minutes per hour
@@ -70,21 +78,13 @@ class Capacity:
         if self.enable_logging:
             self.logger = initialize_logger(self.logs_dir)
 
-        # Set up the population data handler, and get population data
-        self.population_data_handler = PopulationDataHandler(
-            data_dir=os.path.join(self.data_dir, 'input_data', 'population'),
-            country_code=self.country_code,
-            dataset_year=self.dataset_year,
-            one_km_res=self.one_km_res,
-            un_adjusted=self.un_adjusted,
-            logger=self.logger,
-            enable_logging=self.enable_logging)
-        self.population_data = self._get_population_data()
-
         # Assign loaded data to class attributes
-        self.poi = poi.data
-        self.cellsites = cellsites.data
-        self.visibility = visibility.data
+        self.poi = poi
+        self.cellsites = cellsites
+        if visibility is not None:
+            self.visibility = visibility
+        else:
+            self.visibility = None
         self.area = area
         self.mbbt = pd.read_csv("https://zstagigaprodeuw1.blob.core.windows.net/gigainframapkit-public-container/mobile_capacity_data/MobileBB_Traffic_per_Subscr_per_Month.csv")
         self.mbbsubscr = pd.read_csv(
@@ -98,6 +98,26 @@ class Capacity:
         else:
             self.bwdistance_km = pd.read_csv("https://zstagigaprodeuw1.blob.core.windows.net/gigainframapkit-public-container/mobile_capacity_data/_bwdistance_km.csv")
             self.bwdlachievbr = pd.read_csv("https://zstagigaprodeuw1.blob.core.windows.net/gigainframapkit-public-container/mobile_capacity_data/_bwdlachievbr_kbps.csv")
+
+        # Set up the population data handler, and get population data
+        self.population_data_handler = PopulationDataHandler(
+            data_dir=os.path.join(self.data_dir, 'input_data', 'population'),
+            country_code=self.country_code,
+            dataset_year=self.dataset_year,
+            one_km_res=self.one_km_res,
+            un_adjusted=self.un_adjusted,
+            logger=self.logger,
+            enable_logging=self.enable_logging,
+            logs_dir=self.logs_dir)
+        self.population_data = self._get_population_data()
+
+        # Set up the SRTM daa handler if required
+        self.srtm_data_handler = None
+        if visibility is None:
+            self._log("info", "Setting up SRTM data handler...")
+            self.srtm_data_handler = SRTMDataHandler(srtm_directory=os.path.join(self.data_dir, 'input_data', 'srtm1'),
+                                                     enable_logging=self.enable_logging, logger=self.logger, logs_dir=self.logs_dir)
+            self.srtm_data_handler.check_directory()  # Check if the SRTM directory exists, creates it if not
 
     def _get_population_data(self):
         """
@@ -115,10 +135,15 @@ class Capacity:
         if bw not in valid_bw_values:
             raise ValueError(f"Invalid bandwidth (bw) value: {bw}. Must be one of {valid_bw_values}.")
 
-    def _log_info(self, message):
-        """Logs an info message."""
-        if self.logger:
-            self.logger.info(message)
+    def _log(self, level, message):
+        """Conditionally log messages based on enable_logging flag."""
+        if self.enable_logging and self.logger:
+            if level == 'info':
+                self.logger.info(message)
+            elif level == 'warn':
+                self.logger.warn(message)
+            elif level == 'error':
+                self.logger.error(message)
 
     @property
     def udatavmonth_pu(self):
@@ -212,13 +237,13 @@ class Capacity:
                 else:
                     rbdlthtarg = self.dlthtarg * 1024 / (dl_bitrate[i] / self.avrbpdsch)
                 # Log the result for each distance
-                self._log_info(f'distance = {distance}, rbdlthtarg = {rbdlthtarg}')
+                self._log("info", f'distance = {distance}, rbdlthtarg = {rbdlthtarg}')
                 results.append(rbdlthtarg)
         except ValueError as e:
-            self._log_info(f"ValueError in poiddatareq: {e}")
+            self._log("info", f"ValueError in poiddatareq: {e}")
             results = [None] * len(d)
         except Exception as e:
-            self._log_info(f"An error occurred in poiddatareq: {e}")
+            self._log("info", f"An error occurred in poiddatareq: {e}")
             results = [None] * len(d)
         return results
 
@@ -242,13 +267,13 @@ class Capacity:
             for i, distance in enumerate(popcd):
                 # Compute the bitrate per resource block at the population center distance
                 brrbpopcd = dl_bitrate[i] / self.avrbpdsch
-                self._log_info(f'population centre distance = {distance}, brrbpopcd = {brrbpopcd}')
+                self._log("info", f'population centre distance = {distance}, brrbpopcd = {brrbpopcd}')
                 results.append(brrbpopcd)
         except ValueError as e:
-            self._log_info(f"ValueError in brrbpopcd: {e}")
+            self._log("info", f"ValueError in brrbpopcd: {e}")
             results = [None] * len(popcd)
         except Exception as e:
-            self._log_info(f"An error occurred in brrbpopcd: {e}")
+            self._log("info", f"An error occurred in brrbpopcd: {e}")
             results = [None] * len(popcd)
         return results
 
@@ -277,7 +302,7 @@ class Capacity:
              self.bitsingbyte) /
             self.bitsinkbit)
 
-        self._log_info(f'avubrnonbh = {avubrnonbh}')
+        self._log("info", f'avubrnonbh = {avubrnonbh}')
 
         return avubrnonbh
 
@@ -297,7 +322,7 @@ class Capacity:
         Note:
         """
         upopbr = avubrnonbh * pop * (self.mbb_subscr / 100) * (self.oppopshare / 100) / self.fb_per_site
-        self._log_info(f'upopbr = {upopbr}')
+        self._log("info", f'upopbr = {upopbr}')
 
         return upopbr
 
@@ -323,7 +348,7 @@ class Capacity:
 
         # Calculate user population resource blocks utilisation in units.
         upoprbu = [upopbr[0] / denom for denom in brrbpopcd]
-        self._log_info(f'upoprbu = {upoprbu}')
+        self._log("info", f'upoprbu = {upoprbu}')
         return upoprbu
 
     def cellavcap(self, avrbpdsch, upoprbu):
@@ -348,7 +373,7 @@ class Capacity:
         # Cell site available capacity.
         cellavcap = avrbpdsch - upoprbu
         cellavcap = cellavcap.tolist()
-        self._log_info(f'cellavcap = {cellavcap}')
+        self._log("info", f'cellavcap = {cellavcap}')
 
         return cellavcap
 
@@ -372,7 +397,7 @@ class Capacity:
 
         sufcapch = cellavcap > rbdlthtarg
         sufcapch = sufcapch.tolist()
-        self._log_info(f'sufcapch = {sufcapch}')
+        self._log("info", f'sufcapch = {sufcapch}')
         return sufcapch
 
     def capacity_checker(self, d, popcd, udatavmonth, pop):
@@ -420,6 +445,32 @@ class Capacity:
         # Store and return the result
         dict_result = {"upopbr": upopbr, "upoprbu": upoprbu, "cellavcap": cellavcap, "capcheck": capcheck}
         return dict_result
+
+    def visibility_analysis(self):
+        """
+        Perform visibility analysis to determine the number of visible cell sites from each point of interest (POI).
+        """
+        self._log("info", "Triggering visibiliy analysis.")
+        visibility = Visibility(
+            points_of_interest=self.poi,
+            cell_sites=self.cellsites,
+            srtm_data_handler=self.srtm_data_handler,
+            cellsite_search_radius=self.cellsite_search_radius,
+            poi_antenna_height=self.poi_antenna_height,
+            num_visible_cellsites=3,
+            allowed_radio_types=['unknown', '2G', '3G', '4G', '5G'],
+            earth_radius=6371,
+            use_srtm=True,
+            refraction_coef=0,
+            logger=self.logger,
+            logs_dir=self.logs_dir,
+            enable_logging=self.enable_logging
+        )
+        visibility.perform_analysis()
+        visibility_results = visibility.get_results_table()
+        visibility_results = visibility_results[['poi_id', 'ict_id', 'order', 'ground_distance']]
+        visibility_results.loc[visibility_results["ground_distance"].isna(),"ground_distance"] = np.inf
+        return visibility_results
 
     def calculate_buffer_areas(self):
         """
@@ -470,9 +521,8 @@ class Capacity:
             return poi_data_merged
 
         # Copy input data
-        cellsites = self.cellsites.copy()
-        visibility = self.visibility.copy()
-        poi = self.poi.copy()
+        cellsites = self.cellsites.data.copy()
+        poi = self.poi.data.copy()
 
         # For distance conversion from meters to degrees
         central_latitude = cellsites['lat'].mean()
@@ -552,7 +602,16 @@ class Capacity:
 
         # Store the buffer analysis results
         self.buffer_cellsites_result = buffer_cellsites.set_index('ict_id').drop(columns='index')
+
+        # Trigger visibility analysis if required
+        if self.visibility:
+            visibility = self.visibility.data.copy()
+        else:
+            visibility = self.visibility_analysis()
+
+        # Merge POI, visibility, and cell site data
         poi_data_merged = _poi_sufcapch(poi, visibility, self.buffer_cellsites_result)
+
         poi_data_merged['rbdlthtarg'] = poi_data_merged['ground_distance'].apply(
             lambda row: self.poiddatareq(row)
         )

@@ -74,6 +74,7 @@ class PopulationDataHandler:
         self.dataset_year = dataset_year
         self.check_directory()
 
+        # Logger
         if self.enable_logging:
             if logger is None:
                 self.logger = initialize_logger(self.logs_dir)
