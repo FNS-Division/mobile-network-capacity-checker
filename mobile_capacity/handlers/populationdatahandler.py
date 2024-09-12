@@ -94,6 +94,8 @@ class PopulationDataHandler:
                 self.logger.warn(message)
             elif level == 'error':
                 self.logger.error(message)
+            elif level == 'debug':
+                self.logger.debug(message)
 
     def check_directory(self):
         # Checks if the specified data directory exists.

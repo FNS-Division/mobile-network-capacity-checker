@@ -112,6 +112,8 @@ class Visibility:
                 self.logger.warn(message)
             elif level == 'error':
                 self.logger.error(message)
+            elif level == 'debug':
+                self.logger.debug(message)
 
     @property
     def results_table(self):
@@ -284,8 +286,7 @@ class Visibility:
         self.analysis_stats['avg_visibility_checks_per_poi'] = round(
             self.analysis_stats['total_visibility_checks'] / len(self.points_of_interest), 2)
         self.analysis_results = analysis_results
-
-        return print(self.format_analysis_summary())
+        self._log("info", self.format_analysis_summary())
 
     def get_results_table(self):
         """

@@ -144,6 +144,8 @@ class Capacity:
                 self.logger.warn(message)
             elif level == 'error':
                 self.logger.error(message)
+            elif level == 'debug':
+                self.logger.debug(message)
 
     @property
     def udatavmonth_pu(self):
@@ -237,7 +239,7 @@ class Capacity:
                 else:
                     rbdlthtarg = self.dlthtarg * 1024 / (dl_bitrate[i] / self.avrbpdsch)
                 # Log the result for each distance
-                self._log("info", f'distance = {distance}, rbdlthtarg = {rbdlthtarg}')
+                self._log("debug", f'distance = {distance}, rbdlthtarg = {rbdlthtarg}')
                 results.append(rbdlthtarg)
         except ValueError as e:
             self._log("info", f"ValueError in poiddatareq: {e}")
@@ -267,7 +269,7 @@ class Capacity:
             for i, distance in enumerate(popcd):
                 # Compute the bitrate per resource block at the population center distance
                 brrbpopcd = dl_bitrate[i] / self.avrbpdsch
-                self._log("info", f'population centre distance = {distance}, brrbpopcd = {brrbpopcd}')
+                self._log("debug", f'population centre distance = {distance}, brrbpopcd = {brrbpopcd}')
                 results.append(brrbpopcd)
         except ValueError as e:
             self._log("info", f"ValueError in brrbpopcd: {e}")
@@ -302,7 +304,7 @@ class Capacity:
              self.bitsingbyte) /
             self.bitsinkbit)
 
-        self._log("info", f'avubrnonbh = {avubrnonbh}')
+        self._log("debug", f'avubrnonbh = {avubrnonbh}')
 
         return avubrnonbh
 
@@ -322,7 +324,7 @@ class Capacity:
         Note:
         """
         upopbr = avubrnonbh * pop * (self.mbb_subscr / 100) * (self.oppopshare / 100) / self.fb_per_site
-        self._log("info", f'upopbr = {upopbr}')
+        self._log("debug", f'upopbr = {upopbr}')
 
         return upopbr
 
@@ -348,7 +350,7 @@ class Capacity:
 
         # Calculate user population resource blocks utilisation in units.
         upoprbu = [upopbr[0] / denom for denom in brrbpopcd]
-        self._log("info", f'upoprbu = {upoprbu}')
+        self._log("debug", f'upoprbu = {upoprbu}')
         return upoprbu
 
     def cellavcap(self, avrbpdsch, upoprbu):
@@ -373,7 +375,7 @@ class Capacity:
         # Cell site available capacity.
         cellavcap = avrbpdsch - upoprbu
         cellavcap = cellavcap.tolist()
-        self._log("info", f'cellavcap = {cellavcap}')
+        self._log("debug", f'cellavcap = {cellavcap}')
 
         return cellavcap
 
@@ -397,7 +399,7 @@ class Capacity:
 
         sufcapch = cellavcap > rbdlthtarg
         sufcapch = sufcapch.tolist()
-        self._log("info", f'sufcapch = {sufcapch}')
+        self._log("debug", f'sufcapch = {sufcapch}')
         return sufcapch
 
     def capacity_checker(self, d, popcd, udatavmonth, pop):

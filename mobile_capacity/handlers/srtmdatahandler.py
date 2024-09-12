@@ -75,7 +75,8 @@ class SRTMDataHandler:
                 self.logger.warn(message)
             elif level == 'error':
                 self.logger.error(message)
-
+            elif level == 'debug':
+                self.logger.debug(message)
     @property
     def srtmheightmapcollection(self):
         # Returns an instance of Srtm1HeightMapCollection for SRTM data access.
