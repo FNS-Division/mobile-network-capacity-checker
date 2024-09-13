@@ -18,6 +18,9 @@ dependencies:
   - streamlit
   - nbstripout
   - nbconvert
+  - python-srtm=0.5.0
   - flake8-junit-report=2.1.0
   - python-dotenv==1.0.1
   - pytest-cov=4.1.0
+  - pip:
+    - python-srtm==0.5.0
