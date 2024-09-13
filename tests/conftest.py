@@ -47,11 +47,13 @@ def init_variable_values():
         'enable_logging': False,
 
         # Network Configuration
-        'bw': 20,  # Bandwidth, MHz
+        'bw_L850': 5, # MHz on L700 to L900 spectrum bandwidth
+        'bw_L1800': 10, # MHz on L1800 spectrum bandwidth
+        'bw_L2600': 20, # MHz on L2600 spectrum bandwidth
         'rb_num_multiplier': 5,
         'cco': 18,  # Control channel overheads in %
         'mbb_subscr': 113,  # Active mobile-broadband subscriptions per 100 people
-        'fb_per_site': 3,  # Number of frequency bands on site
+        'sectors_per_site': 3,  # Number of sectors on site
         'angles_num': 360,  # Set the number of angles to be used for azimuth analysis
         'rotation_angle': 60,  # Define the rotation angle to create a sector +/-rotation_angle degrees clockwise and counter-clockwise
 

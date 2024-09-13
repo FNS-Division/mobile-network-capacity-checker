@@ -1,12 +1,19 @@
 import math
+import os
+from functools import partial
 import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
 import geopandas as gpd
 from shapely.geometry import Polygon, box
+from shapely import wkt
+from shapely.ops import transform
 from scipy.spatial import Voronoi
 from rasterstats import zonal_stats
-import pandas as pd
 import rasterio
-from shapely import wkt
+from rasterio.plot import show as rio_show
+import contextily as cx
+from contextily import providers
 
 
 def haversine_(lats, lons, R=6371e3, upper_tri=False):
@@ -598,3 +605,102 @@ def calculate_azimuth(lat1, lon1, lat2, lon2):
     brng = np.arctan2(y, x)
 
     return np.round((np.degrees(brng) + 360) % 360, 2)
+
+
+def add_padding_to_bounds(bounds, padding_ratio=0.05):
+    """
+    Add padding to the bounding box to avoid cropping.
+
+    Parameters:
+    - bounds: (minx, miny, maxx, maxy) tuple representing the bounding box
+    - padding_ratio: Ratio of the padding to add around the bounds
+
+    Returns:
+    - Padded bounding box (minx, miny, maxx, maxy)
+    """
+    minx, miny, maxx, maxy = bounds
+    width = maxx - minx
+    height = maxy - miny
+    padding_x = width * padding_ratio
+    padding_y = height * padding_ratio
+    return (minx - padding_x, miny - padding_y, maxx + padding_x, maxy + padding_y)
+
+
+def plot_layers(mobilecapacity, poi_sufcapch_result, buffer_areas, mobile_coverage_path=None, show_basemap=True, figsize=(10, 10), output_file=None):
+    crs = "EPSG:4326"
+
+    # Prepare data for POIs and Cell Towers
+    cell_sites = gpd.GeoDataFrame(mobilecapacity.cellsites.data, geometry=gpd.points_from_xy(mobilecapacity.cellsites.data.lon, mobilecapacity.cellsites.data.lat), crs=crs)
+    pois = gpd.GeoDataFrame(mobilecapacity.poi.data, geometry=gpd.points_from_xy(mobilecapacity.poi.data.lon, mobilecapacity.poi.data.lat), crs=crs)
+    pois = pois.merge(poi_sufcapch_result[['sufcapch']], left_on='poi_id', right_index=True)
+
+    mc = None
+    if mobile_coverage_path and os.path.exists(mobile_coverage_path):
+        mc = gpd.read_file(mobile_coverage_path, crs=crs)
+    elif mobile_coverage_path:
+        print(f"Mobile coverage file not found at {mobile_coverage_path}")
+
+    # Convert CRS to EPSG:3857 (Web Mercator)
+    for df in [cell_sites, pois, mc]:
+        if df is not None and not df.empty:
+            df.to_crs(epsg=3857, inplace=True)
+
+    # Ensure buffer_areas has a CRS set and convert CRS for all geometry columns
+    if buffer_areas is not None and not buffer_areas.empty:
+        if buffer_areas.crs is None:
+            buffer_areas.set_crs(crs, inplace=True)
+        buffer_areas.to_crs(epsg=3857, inplace=True)
+
+    # Plot setup
+    fig, ax = plt.subplots(figsize=figsize)
+
+    # Get bounds from POIs only
+    if pois.empty:
+        print("POIs dataframe is empty.")
+        return
+
+    minx, miny, maxx, maxy = pois.total_bounds
+    minx, miny, maxx, maxy = add_padding_to_bounds((minx, miny, maxx, maxy), padding_ratio=0.05)
+
+    # Plot mobile coverage if available
+    if mc is not None:
+        mc.plot(ax=ax, alpha=0.3, legend=True)
+
+    # Plot cell towers
+    cell_sites.plot(ax=ax, color='yellow', markersize=50, marker='o', label='Cell towers', edgecolor='black')
+
+    # Plot POIs with sufficient and insufficient capacity
+    sufficient_capacity = pois[pois['sufcapch']]
+    insufficient_capacity = pois[~pois['sufcapch']]
+    sufficient_capacity.plot(ax=ax, color='green', markersize=30, marker='^', label="POIs with sufficient capacity", edgecolor='black')
+    insufficient_capacity.plot(ax=ax, color='red', markersize=30, marker='^', label="POIs with insufficient capacity", edgecolor='black')
+
+    # Plot buffer areas based on different radii
+    for radius in range(mobilecapacity.min_radius, mobilecapacity.max_radius + 1, mobilecapacity.radius_step):
+        if f'clring_{radius}' in buffer_areas.columns:
+            geometry = buffer_areas[f'clring_{radius}'].set_crs(epsg=4326)
+            geometry = geometry.to_crs(epsg=3857)
+            geometry.plot(ax=ax, color='blue', edgecolor='lightgrey', alpha=0.5)
+
+    # Add basemap if required
+    if show_basemap:
+        try:
+            cx.add_basemap(ax, crs=pois.crs, source=cx.providers.CartoDB.Positron)
+        except Exception as e:
+            print(f"Failed to add basemap: {e}")
+            print("Skipping basemap...")
+
+    # Set plot limits
+    ax.set_xlim([minx, maxx])
+    ax.set_ylim([miny, maxy])
+    ax.axis('off')
+    ax.set_title('Cell Sites, POIs, Buffers, and Mobile Coverage', fontsize=16, pad=20)
+    ax.legend(loc='upper left', bbox_to_anchor=(0, 1), fontsize=12)
+    plt.tight_layout()
+
+    # Save or show the plot
+    if output_file:
+        plt.savefig(output_file, dpi=300, bbox_inches='tight')  # High DPI for better resolution
+        plt.close()
+    else:
+        plt.show()

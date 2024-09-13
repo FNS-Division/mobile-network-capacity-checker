@@ -7,12 +7,20 @@ import uuid
 def initialize_logger(logs_dir):
     """
     Initializes and returns a logger with both console and file handlers.
+    Ensures no duplicate handlers are added.
+
+    Args:
+        logs_dir (str): Directory to store log files.
 
     Returns:
         logging.Logger: Configured logger object.
     """
     # Use the root logger
     logger = logging.getLogger()
+
+    # Clear any existing handlers
+    logger.handlers.clear()
+
     logger.setLevel(logging.INFO)
 
     # Define a console handler
@@ -34,6 +42,9 @@ def initialize_logger(logs_dir):
     # Add the handlers to the logger
     logger.addHandler(ch)
     logger.addHandler(fh)
+
+    # Prevent propagation to avoid duplicate logs
+    logger.propagate = False
 
     return logger
 
