@@ -471,7 +471,7 @@ class Capacity:
         visibility.perform_analysis()
         visibility_results = visibility.get_results_table()
         visibility_results = visibility_results[['poi_id', 'ict_id', 'order', 'ground_distance']]
-        visibility_results.loc[visibility_results["ground_distance"].isna(),"ground_distance"] = np.inf
+        visibility_results.loc[visibility_results["ground_distance"].isna(), "ground_distance"] = np.inf
         return visibility_results
 
     def calculate_buffer_areas(self):

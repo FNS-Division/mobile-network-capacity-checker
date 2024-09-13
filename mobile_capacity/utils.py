@@ -3,6 +3,7 @@ import logging
 from datetime import datetime
 import uuid
 
+
 def initialize_logger(logs_dir):
     """
     Initializes and returns a logger with both console and file handlers.
@@ -74,7 +75,7 @@ def log_progress_bar(logger, iteration, total, prefix='', suffix='', decimals=1,
     filled_length = int(length * iteration // total)
     bar = fill * filled_length + '-' * (length - filled_length)
     log_message = f'{prefix} |{bar}| {percent}% {suffix}'
-    
+
     # Use carriage return to overwrite the line in console output
     if iteration < total:
         logger.info(log_message + '\r')
