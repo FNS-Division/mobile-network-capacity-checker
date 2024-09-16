@@ -47,9 +47,9 @@ def init_variable_values():
         'enable_logging': False,
 
         # Network Configuration
-        'bw_L850': 5, # MHz on L700 to L900 spectrum bandwidth
-        'bw_L1800': 10, # MHz on L1800 spectrum bandwidth
-        'bw_L2600': 20, # MHz on L2600 spectrum bandwidth
+        'bw_L850': 5,  # MHz on L700 to L900 spectrum bandwidth
+        'bw_L1800': 10,  # MHz on L1800 spectrum bandwidth
+        'bw_L2600': 20,  # MHz on L2600 spectrum bandwidth
         'rb_num_multiplier': 5,
         'cco': 18,  # Control channel overheads in %
         'mbb_subscr': 113,  # Active mobile-broadband subscriptions per 100 people
