@@ -10,6 +10,8 @@ import numpy as np
 import pandas as pd
 import geopandas as gpd
 import os
+from cryptography.fernet import Fernet
+import io
 
 
 class Capacity:
@@ -21,6 +23,7 @@ class Capacity:
                  cellsites: CellSiteCollection,
                  bw_L850, bw_L1800, bw_L2600,
                  cco, max_radius, min_radius, radius_step, angles_num, rotation_angle, dlthtarg, nonbhu, mbb_subscr,
+                 access_key: str = None,
                  sectors_per_site: int = 3,
                  cellsite_search_radius: int = 35000,
                  poi_antenna_height: int = 15,
@@ -32,8 +35,7 @@ class Capacity:
                  un_adjusted: bool = True,
                  nbhours: int = 10,
                  oppopshare: int = 50,
-                 enable_logging: bool = False,
-                 use_confidential_data: bool = True):
+                 enable_logging: bool = False):
 
         # Parameters
         self.country_code = country_code  # Country ISO3 code
@@ -93,16 +95,21 @@ class Capacity:
         self.mbbtraffic = pd.read_csv(
             "https://zstagigaprodeuw1.blob.core.windows.net/gigainframapkit-public-container/mobile_capacity_data/mobile-broadband-internet-traffic-within-the-country.csv")
 
-        if use_confidential_data:
-            self.bwdistance_km = pd.read_csv(os.path.join(self.data_dir, 'input_data', 'carrier_bandwidth', 'bwdistance_km.csv'))
-            self.bwdlachievbr = pd.read_csv(os.path.join(self.data_dir, 'input_data', 'carrier_bandwidth', 'bwdlachievbr_kbps.csv'))
-        else:
-            self.bwdistance_km = pd.read_csv("https://zstagigaprodeuw1.blob.core.windows.net/gigainframapkit-public-container/mobile_capacity_data/_bwdistance_km.csv")
-            self.bwdlachievbr = pd.read_csv("https://zstagigaprodeuw1.blob.core.windows.net/gigainframapkit-public-container/mobile_capacity_data/_bwdlachievbr_kbps.csv")
+        # Decryption key
+        self.access_key = access_key
+        if not self.access_key:
+            raise ValueError("Decryption key not found")
 
+        # Initialize the Fernet instance for decryption
+        self.fernet = Fernet(self.access_key)
+
+        # Load the encrypted data
+        self.bwdistance_km = self._decrypt_file(os.path.join(self.data_dir, 'input_data', 'carrier_bandwidth', 'bwdistance_km.enc'))
+        self.bwdlachievbr = self._decrypt_file(os.path.join(self.data_dir, 'input_data', 'carrier_bandwidth', 'bwdlachievbr_kbps.enc'))
+        
         # Set up the population data handler, and get population data
         self.population_data_handler = PopulationDataHandler(
-            data_dir=os.path.join(self.data_dir, 'input_data', 'population'),
+            data_dir=os.path.join(self.data_dir, 'input_data', self.country_code, 'population'),
             country_code=self.country_code,
             dataset_year=self.dataset_year,
             one_km_res=self.one_km_res,
@@ -116,10 +123,17 @@ class Capacity:
         self.srtm_data_handler = None
         if visibility is None:
             self._log("info", "Setting up SRTM data handler...")
-            self.srtm_data_handler = SRTMDataHandler(srtm_directory=os.path.join(self.data_dir, 'input_data', 'srtm1'),
+            self.srtm_data_handler = SRTMDataHandler(srtm_directory=os.path.join(self.data_dir, 'input_data', self.country_code, 'srtm1'),
                                                      enable_logging=self.enable_logging, logger=self.logger, logs_dir=self.logs_dir)
             self.srtm_data_handler.check_directory()  # Check if the SRTM directory exists, creates it if not
 
+    def _decrypt_file(self, file_path):
+        with open(file_path, 'rb') as encrypted_file:
+            encrypted_data = encrypted_file.read()
+        decrypted_data = self.fernet.decrypt(encrypted_data)
+        df = pd.read_csv(io.StringIO(decrypted_data.decode('utf-8')))
+        return df
+    
     def _get_population_data(self):
         """
         Property that loads and returns population data for the given country and year.

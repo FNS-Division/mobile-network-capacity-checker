@@ -10,24 +10,35 @@ data/output_data/*
 # Ignore everything in data/input_data
 data/input_data/*
 
-# But track these specific files in data/input_data
-
-# Input datasets
-# STP
+# Un-ignore specific files to track
+# STP files
+!data/input_data/STP/
 !data/input_data/STP/STP-1713385818-4t89-pointofinterest.csv
 !data/input_data/STP/STP-1713438795-bivd-cellsite.csv
-# ESP
+
+# ESP files
+!data/input_data/ESP/
 !data/input_data/ESP/cell-sites.csv
 !data/input_data/ESP/points-of-interest.csv
 !data/input_data/ESP/visibility.csv
 !data/input_data/ESP/area.gpkg
 !data/input_data/ESP/mobile-coverage.gpkg
 
-# Encrypted datasets
-!data/input_data/carrier_bandwidth/bwdistance_km.enc
-!data/input_data/carrier_bandwidth/bwdlachievbr_kbps.enc
-!data/input_data/frequency/bwdistance_km.enc
-!data/input_data/frequency/bwdlachievbr_kbps.enc
+# Un-ignore encrypted datasets but keep specific CSVs ignored
+!data/input_data/carrier_bandwidth/
+!data/input_data/carrier_bandwidth/*.enc
+!data/input_data/frequency/
+!data/input_data/frequency/*.enc
+
+# Ignore specific CSVs in carrier_bandwidth and frequency
+data/input_data/carrier_bandwidth/bwdistance_km.csv
+data/input_data/carrier_bandwidth/bwdlachievbr_kbps.csv
+data/input_data/frequency/bwdistance_km.csv
+data/input_data/frequency/bwdlachievbr_kbps.csv
+
+# Ignore zip files
+*.zip
+*.tif
 
 # Python cache files
 __pycache__/
