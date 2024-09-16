@@ -19,7 +19,9 @@ class Capacity:
                  logs_dir: str,
                  poi: PointOfInterestCollection,
                  cellsites: CellSiteCollection,
-                 bw, cco, fb_per_site, max_radius, min_radius, radius_step, angles_num, rotation_angle, dlthtarg, nonbhu, mbb_subscr,
+                 bw_L850, bw_L1800, bw_L2600,
+                 cco, max_radius, min_radius, radius_step, angles_num, rotation_angle, dlthtarg, nonbhu, mbb_subscr,
+                 sectors_per_site: int = 3,
                  cellsite_search_radius: int = 35000,
                  poi_antenna_height: int = 15,
                  rb_num_multiplier: int = 5,
@@ -31,27 +33,26 @@ class Capacity:
                  nbhours: int = 10,
                  oppopshare: int = 50,
                  enable_logging: bool = False,
-                 use_confidential_data: bool = False):
-
-        # Input validation
-        self._validate_input(bw)
+                 use_confidential_data: bool = True):
 
         # Parameters
         self.country_code = country_code  # Country ISO3 code
-        self.bw = bw  # Bandwidth in MHz
+        self.bw_L850 = bw_L850  # MHz on L700 to L900 spectrum bandwidth
+        self.bw_L1800 = bw_L1800  # MHz on L1800 to L2100 spectrum bandwidth
+        self.bw_L2600 = bw_L2600  # MHz on L2300 to L2600 spectrum bandwidth
         self.cco = cco  # Control channel overhead in %
-        self.fb_per_site = fb_per_site  # Number of frequency bands per site
-        self.angles_num = angles_num  # Number of angles PLACEHOLDER
-        self.rotation_angle = rotation_angle  # Rotation angle in degrees PLACEHOLDER
+        self.sectors_per_site = sectors_per_site  # Number of sectors per site
+        self.angles_num = angles_num  # Number of angles
+        self.rotation_angle = rotation_angle  # Rotation angle in degrees
         self.dlthtarg = dlthtarg  # Download throughput target in Mbps
         self.mbb_subscr = mbb_subscr  # Active mobile-broadband subscriptions per 100 people
         self.oppopshare = oppopshare  # Percentage of population using operator services in %
         self.nonbhu = nonbhu  # Connection usage in non-busy hour in %
-        self.nbhours = nbhours  # number of non-busy hours per day
+        self.nbhours = nbhours  # Number of non-busy hours per day
         self.rb_num_multiplier = rb_num_multiplier  # Resource block number multiplier
-        self.max_radius = max_radius  # maximum buffer radius
-        self.min_radius = min_radius  # maximum buffer radius
-        self.radius_step = radius_step  # maximum buffer radius
+        self.max_radius = max_radius  # Maximum buffer radius
+        self.min_radius = min_radius  # Maximum buffer radius
+        self.radius_step = radius_step  # Maximum buffer radius
 
         # Visibility analysis parameters
         self.cellsite_search_radius = cellsite_search_radius  # Cell site search radius in meters
@@ -59,11 +60,11 @@ class Capacity:
 
         # Constants
         self.days = 30.4  # Days in one month
-        self.minperhour = 60  # number of minutes per hour
-        self.secpermin = 60  # number of seconds per minute
-        self.bitsingbit = 1000000000  # bits in one gigabit
-        self.bitsinkbit = 1000  # bits in kilobit
-        self.bitsingbyte = 8589934592  # bits in one gigabyte
+        self.minperhour = 60  # Number of minutes per hour
+        self.secpermin = 60  # Number of seconds per minute
+        self.bitsingbit = 1000000000  # Bits in one gigabit
+        self.bitsinkbit = 1000  # Bits in kilobit
+        self.bitsingbyte = 8589934592  # Bits in one gigabyte
 
         # Population data handler variables
         self.dataset_year = dataset_year
@@ -93,8 +94,8 @@ class Capacity:
             "https://zstagigaprodeuw1.blob.core.windows.net/gigainframapkit-public-container/mobile_capacity_data/mobile-broadband-internet-traffic-within-the-country.csv")
 
         if use_confidential_data:
-            self.bwdistance_km = pd.read_csv(os.path.join(self.data_dir, 'input_data', 'bwdistance_km.csv'))
-            self.bwdlachievbr = pd.read_csv(os.path.join(self.data_dir, 'input_data', 'bwdlachievbr_kbps.csv'))
+            self.bwdistance_km = pd.read_csv(os.path.join(self.data_dir, 'input_data', 'carrier_bandwidth', 'bwdistance_km.csv'))
+            self.bwdlachievbr = pd.read_csv(os.path.join(self.data_dir, 'input_data', 'carrier_bandwidth', 'bwdlachievbr_kbps.csv'))
         else:
             self.bwdistance_km = pd.read_csv("https://zstagigaprodeuw1.blob.core.windows.net/gigainframapkit-public-container/mobile_capacity_data/_bwdistance_km.csv")
             self.bwdlachievbr = pd.read_csv("https://zstagigaprodeuw1.blob.core.windows.net/gigainframapkit-public-container/mobile_capacity_data/_bwdlachievbr_kbps.csv")
@@ -129,12 +130,6 @@ class Capacity:
                                    crs="EPSG:4326")
         return pop_gdf
 
-    def _validate_input(self, bw):
-        """Validates the bandwidth (bw) parameter."""
-        valid_bw_values = {5, 10, 15, 20}
-        if bw not in valid_bw_values:
-            raise ValueError(f"Invalid bandwidth (bw) value: {bw}. Must be one of {valid_bw_values}.")
-
     def _log(self, level, message):
         """Conditionally log messages based on enable_logging flag."""
         if self.enable_logging and self.logger:
@@ -146,6 +141,13 @@ class Capacity:
                 self.logger.error(message)
             elif level == 'debug':
                 self.logger.debug(message)
+
+    @property
+    def bw(self):
+        """
+        Returns the total bandwidth in MHz.
+        """
+        return self.bw_L850 + self.bw_L1800 + self.bw_L2600
 
     @property
     def udatavmonth_pu(self):
@@ -197,22 +199,35 @@ class Capacity:
         # Convert input distances to numpy array
         poi_distances = np.array(poi_distances) / 1000  # converts distances in meters to kilometers
 
-        # Retrieve distance and bitrate arrays for the given bandwidth
-        distances_array = self.bwdistance_km[[f'{self.bw}MHz']].values.flatten()
-        bitrate_array = self.bwdlachievbr[[f'{self.bw}MHz']].values.flatten()
+        # Create weights
+        weights = np.array([self.bw_L850 / self.bw, self.bw_L1800 / self.bw, self.bw_L2600 / self.bw])
 
-        # Create a mask to find the first distance in distances_array larger than or equal to each POI-tower distance
-        mask = (distances_array[np.newaxis, :] >= poi_distances[:, np.newaxis])
-        indices = mask.argmax(axis=1)
+        # Array to populate
+        dl_bitrates = np.full((len(poi_distances), 3), np.nan)
 
-        # Identify POI distances that do not have a corresponding larger/equal distance in distances_array
-        no_larger_equal = ~mask.any(axis=1)
+        for i, bw in enumerate(["L850", "L1800", "L2600"]):
+            # Retrieve distance and bitrate arrays for the given bandwidth
+            distances_array = self.bwdistance_km[bw].values.flatten()
+            bitrate_array = self.bwdlachievbr[bw].values.flatten()
 
-        # Fetch the corresponding bitrate values and handle out-of-bound values
-        dl_bitrate = bitrate_array[indices]
-        dl_bitrate[no_larger_equal] = np.nan
+            # Create a mask to find the first distance in distances_array larger than or equal to each POI-tower distance
+            mask = (distances_array[np.newaxis, :] >= poi_distances[:, np.newaxis])
+            indices = mask.argmax(axis=1)
 
-        return dl_bitrate
+            # Identify POI distances that do not have a corresponding larger/equal distance in distances_array
+            no_larger_equal = ~mask.any(axis=1)
+
+            # Fetch the corresponding bitrate values and handle out-of-bound values
+            dl_bitrate = bitrate_array[indices]
+            dl_bitrate[no_larger_equal] = np.nan
+
+            # Store the results
+            dl_bitrates[:, i] = dl_bitrate
+
+        # Compute the weighted sum of the downlink bitrates
+        weighted_sum = np.dot(dl_bitrates, weights)
+
+        return weighted_sum
 
     def poiddatareq(self, d):
         """
@@ -310,20 +325,20 @@ class Capacity:
 
     def upopbr(self, avubrnonbh, pop):
         """
-        User Population Bitrate per frequency band, kbps
+        User Population Bitrate per sector, kbps
 
         Parameters:
         - avubrnonbh (float): Average user bitrate in non-busy hour in kbps.
         - upop (int): User population number, people.
         - oppopshare (int): Percentage of population using operator services in %.
-        - fb_per_site (int): No. of Frequency Bands on Site
+        - sectors_per_site (int): No. of Frequency Bands on Site
 
         Returns:
         - upopbr (float): User Population Bitrate in kbps.
 
         Note:
         """
-        upopbr = avubrnonbh * pop * (self.mbb_subscr / 100) * (self.oppopshare / 100) / self.fb_per_site
+        upopbr = avubrnonbh * pop * (self.mbb_subscr / 100) * (self.oppopshare / 100) / self.sectors_per_site
         self._log("debug", f'upopbr = {upopbr}')
 
         return upopbr
