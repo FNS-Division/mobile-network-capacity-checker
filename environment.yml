@@ -25,3 +25,4 @@ dependencies:
   - pytest-cov=4.1.0
   - pip:
     - python-srtm==0.5.0
+    - cryptography==43.0.1

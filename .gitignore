@@ -4,15 +4,30 @@ documentation/*
 # Ignore everything in data/auxiliary_data
 data/auxiliary_data/*
 
+# Ignore all files in the output_data folder
+data/output_data/*
+
 # Ignore everything in data/input_data
 data/input_data/*
 
 # But track these specific files in data/input_data
-!data/input_data/cell-sites.csv
-!data/input_data/points-of-interest.csv
-!data/input_data/visibility.csv
-!data/input_data/area.gpkg
-!data/input_data/mobile-coverage.gpkg
+
+# Input datasets
+# STP
+!data/input_data/STP/STP-1713385818-4t89-pointofinterest.csv
+!data/input_data/STP/STP-1713438795-bivd-cellsite.csv
+# ESP
+!data/input_data/ESP/cell-sites.csv
+!data/input_data/ESP/points-of-interest.csv
+!data/input_data/ESP/visibility.csv
+!data/input_data/ESP/area.gpkg
+!data/input_data/ESP/mobile-coverage.gpkg
+
+# Encrypted datasets
+!data/input_data/carrier_bandwidth/bwdistance_km.enc
+!data/input_data/carrier_bandwidth/bwdlachievbr_kbps.enc
+!data/input_data/frequency/bwdistance_km.enc
+!data/input_data/frequency/bwdlachievbr_kbps.enc
 
 # Python cache files
 __pycache__/
@@ -37,10 +52,13 @@ config*
 # Log files
 logs/*
 
+# Keys
+*.key
+
 # Azure ML specific files
 *.amltmp
 *.amlignore
 *.amlignore.amltmp
 
-# Ignore all files in the output_data folder
-data/output_data/*
+# Environment files
+*.env
