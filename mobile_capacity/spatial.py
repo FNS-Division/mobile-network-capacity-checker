@@ -1,12 +1,14 @@
 import math
 import numpy as np
 import geopandas as gpd
-from shapely.geometry import Polygon, box
+from shapely.geometry import Polygon
 from scipy.spatial import Voronoi
 from rasterstats import zonal_stats
 import pandas as pd
-import rasterio
-
+import matplotlib.pyplot as plt
+import rasterio  
+from rasterio.plot import show as rio_show 
+import folium
 
 def meters_to_degrees_latitude(meters, latitude):
     """
@@ -247,3 +249,229 @@ def get_tif_xsize(file_path):
         raise ValueError('Unable to open the tif file!')
     except Exception as e:
         raise ValueError(f'Error processing the tif file: {str(e)}')
+
+
+def calculate_zoom_level(minx, miny, maxx, maxy):
+    """
+    Estimate an appropriate zoom level for a map based on geographical extent.
+
+    Parameters:
+    minx, miny, maxx, maxy (float): Bounding box coordinates.
+
+    Returns:
+    int: Estimated zoom level (3-12).
+
+    Note:
+    Higher zoom levels (e.g., 12) correspond to smaller areas (street view).
+    Lower zoom levels (e.g., 3) correspond to larger areas (world view).
+    """
+    # Function to estimate zoom level based on the extent of the geographical area
+    lat_diff = abs(maxy - miny)
+    lon_diff = abs(maxx - minx)
+
+    # Calculate approximate zoom level based on the larger difference (lat or lon)
+    max_diff = max(lat_diff, lon_diff)
+
+    # Mapping the difference to an appropriate zoom level
+    # Approximate scale: smaller area -> higher zoom level
+    if max_diff > 60:
+        return 3  # World view
+    elif max_diff > 20:
+        return 5  # Continent view
+    elif max_diff > 10:
+        return 6  # Large country view
+    elif max_diff > 5:
+        return 7  # Region view
+    elif max_diff > 2:
+        return 8  # Sub-region view
+    elif max_diff > 1:
+        return 9  # City view
+    elif max_diff > 0.5:
+        return 10  # Town view
+    elif max_diff > 0.25:
+        return 11  # Neighborhood view
+    else:
+        return 12  # Street view
+
+
+def plot_layers(mobilecapacity, poi_sufcapch_result, buffer_areas, output_file=None):
+    """
+    Create a folium map visualizing mobile network capacity, POIs, and cell towers.
+
+    This function generates an interactive map showing the distribution of Points of Interest (POIs)
+    with sufficient or insufficient capacity, cell tower locations, and buffer areas around POIs.
+
+    Parameters:
+    -----------
+    mobilecapacity : MobileCapacity
+        An instance of the MobileCapacity class containing cell site and POI data.
+    poi_sufcapch_result : pandas.DataFrame
+        A DataFrame containing the sufficiency of capacity for each POI.
+    buffer_areas : geopandas.GeoDataFrame
+        A GeoDataFrame containing buffer areas around POIs.
+    output_file : str, optional
+        Path to save the output map as an HTML file. If None, the map object is returned.
+
+    Returns:
+    --------
+    folium.Map or None
+        If output_file is None, returns a folium Map object. Otherwise, saves the map to the
+        specified file and returns None.
+
+    Notes:
+    ------
+    - The map uses the EPSG:4326 coordinate reference system.
+    - POIs are color-coded: green for sufficient capacity, red for insufficient capacity.
+    - Cell towers are represented by dark blue markers.
+    - Buffer areas are shown in blue with 50% opacity.
+    - A legend is included in the bottom right corner of the map.
+    """
+
+    legend_html = '''
+    <div style="
+        position: fixed;
+        bottom: 50px;
+        right: 50px;
+        width: 200px;
+        height: auto;
+        border: 2px solid grey;
+        z-index: 1000;
+        font-size: 14px;
+        background-color: white;
+        padding: 10px;
+        border-radius: 5px;
+    ">
+        <b>Capacity</b><br>
+        <i class="fa fa-circle" style="color:green"></i> Sufficient Capacity<br>
+        <i class="fa fa-circle" style="color:red"></i> Insufficient Capacity<br>
+        <i class="fa fa-circle" style="color:darkblue"></i> Cell Towers
+    </div>
+    '''
+
+    crs = "EPSG:4326"
+
+    # Prepare data for POIs and Cell Towers
+    cell_sites = gpd.GeoDataFrame(mobilecapacity.cellsites,
+                                  geometry=gpd.points_from_xy(mobilecapacity.cellsites.lon, mobilecapacity.cellsites.lat),
+                                  crs=crs)
+    pois = gpd.GeoDataFrame(mobilecapacity.poi, geometry=gpd.points_from_xy(mobilecapacity.poi.lon, mobilecapacity.poi.lat),
+                            crs=crs)
+    pois = pois.merge(poi_sufcapch_result[['sufcapch']], left_on='poi_id', right_index=True)
+
+    # Convert CRS to EPSG:4326 (Lat/Long) for folium
+    for df in [cell_sites, pois]:
+        if df is not None and not df.empty:
+            df.to_crs(epsg=4326, inplace=True)
+
+    # Ensure buffer_areas has a CRS set
+    if buffer_areas is not None and not buffer_areas.empty:
+        if buffer_areas.crs is None:
+            buffer_areas.set_crs(crs, inplace=True)
+        buffer_areas.to_crs(epsg=4326, inplace=True)
+
+    # Concatenate geometries, ensuring CRS is set
+    all_geometries = pd.concat([cell_sites.geometry, pois.geometry])
+    if buffer_areas is not None:
+        for radius in range(mobilecapacity.min_radius, mobilecapacity.max_radius + 1, mobilecapacity.radius_step):
+            if f'clring_{radius}' in buffer_areas.columns:
+                # Ensure CRS is set for each buffer geometry
+                buffer_geom = buffer_areas[f'clring_{radius}']
+                if buffer_geom.crs is None:
+                    buffer_geom = buffer_geom.set_crs(crs)
+                all_geometries = pd.concat([all_geometries, buffer_geom])
+
+    minx, miny, maxx, maxy = all_geometries.total_bounds
+
+    # Dynamically calculate zoom_start
+    zoom_level = calculate_zoom_level(minx, miny, maxx, maxy)
+
+    # Create the folium map with dynamic zoom_start
+    center_lat = (miny + maxy) / 2
+    center_lon = (minx + maxx) / 2
+    m = folium.Map(location=[center_lat, center_lon], zoom_start=zoom_level, tiles="cartodb positron")
+
+    # Add buffer areas first
+    for radius in range(mobilecapacity.min_radius, mobilecapacity.max_radius + 1, mobilecapacity.radius_step):
+        if f'clring_{radius}' in buffer_areas.columns:
+            for idx, geom in buffer_areas[f'clring_{radius}'].items():
+                folium.GeoJson(geom, style_function=lambda x: {'color': 'blue', 'fillOpacity': 0.5}).add_to(m)
+
+    # Add cell towers as circle markers
+    for idx, row in cell_sites.iterrows():
+        folium.CircleMarker(
+            location=[row.geometry.y, row.geometry.x],
+            radius=8,  # Marker size
+            color='darkblue',  # Border color
+            fill=True,  # Fill the circle
+            fill_color='darkblue',  # Fill color
+            fill_opacity=0.7,  # Opacity of the fill
+            popup=f"Cell Tower {row.ict_id}"
+        ).add_to(m)
+
+    # Add POIs with sufficient and insufficient capacity as circle markers
+    for idx, row in pois.iterrows():
+        popup_text = f"POI {row.poi_id}: {'Sufficient' if row['sufcapch'] else 'Insufficient'} Capacity"
+        color = 'green' if row['sufcapch'] else 'red'
+        folium.CircleMarker(
+            location=[row.geometry.y, row.geometry.x],
+            radius=5,  # Adjust this value to make the markers smaller
+            color=color,  # Border color of the circle
+            fill=True,
+            fill_color=color,  # Fill color
+            fill_opacity=0.7,  # Transparency of the fill color
+            popup=popup_text
+        ).add_to(m)
+
+    # Add custom legend
+    m.get_root().html.add_child(folium.Element(legend_html))
+
+    # Save or show the map
+    if output_file:
+        m.save(output_file)
+    else:
+        return m
+
+
+def display_population_raster(mobilecapacity, output_file=None):
+    """
+    Display or save a plot of the population density raster.
+
+    Parameters:
+    -----------
+    mobilecapacity : MobileCapacity
+        An instance of the MobileCapacity class containing population data.
+    output_file : str, optional
+        Path to save the output plot as an image file. If None, the plot is displayed.
+
+    Returns:
+    --------
+    matplotlib.figure.Figure
+        The figure object containing the plot.
+
+    Notes:
+    ------
+    - The plot shows population density using a color scale.
+    - Axes are labeled with latitude and longitude.
+    - A color bar is included to interpret the population density values.
+    """
+    # Open the raster file
+    raster = rasterio.open(mobilecapacity.population_data_handler.dataset_path)
+
+    # Create the plot
+    fig, ax = plt.subplots(figsize=(10, 10))
+
+    # Display the raster and capture the returned image
+    rio_show(raster, ax=ax, cmap='viridis')
+
+    # Set title and labels
+    ax.set_title('Population Density')
+    ax.set_xlabel('Longitude')
+    ax.set_ylabel('Latitude')
+
+    # Save or return the figure without displaying
+    if output_file:
+        plt.savefig(output_file, dpi=300, bbox_inches='tight')
+        plt.close(fig)
+    else:
+        plt.close(fig)  # Close the figure to prevent automatic display
+        return fig

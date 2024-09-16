@@ -16,6 +16,7 @@ dependencies:
   - shapely
   - pytest
   - streamlit
+  - folium
   - nbstripout
   - nbconvert
   - flake8-junit-report=2.1.0
