@@ -1,4 +1,4 @@
-from mobile_capacity.spatial import meters_to_degrees_latitude, create_voronoi_cells, vectorized_population_sum
+from mobile_capacity.spatial import *
 from mobile_capacity.utils import initialize_logger
 from mobile_capacity.handlers.populationdatahandler import PopulationDataHandler
 from mobile_capacity.entities.pointofinterest import PointOfInterestCollection
