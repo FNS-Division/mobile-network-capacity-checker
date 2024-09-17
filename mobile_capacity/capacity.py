@@ -262,21 +262,21 @@ class Capacity:
         try:
             # Get the downlink bitrate for the given distances
             dl_bitrate = self.get_dl_bitrate(poi_distances=d)
-            
+
             # Vectorized computation
             mask = d <= self.max_radius
             results[mask] = self.dlthtarg * 1024 / (dl_bitrate[mask] / self.avrbpdsch)
             results[~mask] = np.inf
-            
+
             # Log the results
             for distance, rbdlthtarg in zip(d, results):
                 self._log("debug", f'distance = {distance}, rbdlthtarg = {rbdlthtarg}')
-        
+
         except ValueError as e:
             self._log("info", f"ValueError in poiddatareq: {e}")
         except Exception as e:
             self._log("info", f"An error occurred in poiddatareq: {e}")
-        
+
         return results
 
     def brrbpopcd(self, popcd):
@@ -297,19 +297,19 @@ class Capacity:
         try:
             # Get the downlink bitrate for the given distances
             dl_bitrate = self.get_dl_bitrate(poi_distances=popcd)
-            
+
             # Vectorized computation
             results = dl_bitrate / self.avrbpdsch
-            
+
             # Log the results
             for distance, brrbpopcd_value in zip(popcd, results):
                 self._log("debug", f'population centre distance = {distance}, brrbpopcd = {brrbpopcd_value}')
-        
+
         except ValueError as e:
             self._log("info", f"ValueError in brrbpopcd: {e}")
         except Exception as e:
             self._log("info", f"An error occurred in brrbpopcd: {e}")
-        
+
         return results
 
     def avubrnonbh(self, udatavmonth):
@@ -492,29 +492,6 @@ class Capacity:
         dict_result = {"upopbr": upopbr, "upoprbu": upoprbu, "cellavcap": cellavcap, "capcheck": capcheck}
         return dict_result
 
-    # def visibility_analysis(self):
-    #     """
-    #     Perform visibility analysis to determine the number of visible cell sites from each point of interest (POI).
-    #     """
-    #     self._log("info", "Triggering visibiliy analysis.")
-    #     visibility = Visibility(
-    #         points_of_interest=self.poi,
-    #         cell_sites=self.cellsites,
-    #         srtm_data_handler=self.srtm_data_handler,
-    #         poi_antenna_height=self.poi_antenna_height,
-    #         allowed_radio_types=['unknown', '2G', '3G', '4G', '5G'],
-    #         earth_radius=6371,
-    #         use_srtm=True,
-    #         refraction_coef=0,
-    #         logger=self.logger,
-    #         logs_dir=self.logs_dir,
-    #         enable_logging=self.enable_logging
-    #     )
-    #     visibility.perform_analysis()
-    #     visibility_results = visibility.get_results_table()
-    #     visibility_results = visibility_results[['poi_id', 'ict_id', 'order', 'ground_distance']]
-    #     visibility_results.loc[visibility_results["ground_distance"].isna(), "ground_distance"] = np.inf
-    #     return visibility_results
 
     def calculate_buffer_areas(self):
         """
@@ -589,7 +566,7 @@ class Capacity:
         rings_gdf['radius'] = rings_gdf['buffer'] - self.radius_step / 2
 
         # Match POIs to cell towers based on coverage area
-        pois_within_cellsites = gpd.sjoin(pois_gdf, buffers_gdf, how='left', predicate='within')            
+        pois_within_cellsites = gpd.sjoin(pois_gdf, buffers_gdf, how='left', predicate='within')
         pois_within_cellsites["ground_distance"], pois_within_cellsites["visible"] = zip(*pois_within_cellsites.apply(_get_visibility_status, axis=1))
 
         ### POI-LEVEL COMPUTATIONS ###
@@ -624,7 +601,7 @@ class Capacity:
         pois_within_cellsites = pois_within_cellsites.merge(cellsites_rbu, on='ict_id', how='left')
         pois_within_cellsites["cellavcap"] = pois_within_cellsites["cellavcap"].fillna(0)
         pois_within_cellsites["sufcapch"] = self.sufcapch(pois_within_cellsites["cellavcap"], pois_within_cellsites["rbdlthtarg"])
-        pois_within_cellsites = pois_within_cellsites[["poi_id","ict_id","ground_distance","visible","rbdlthtarg", "upoprbu", "cellavcap", "sufcapch"]]
+        pois_within_cellsites = pois_within_cellsites[["poi_id", "ict_id", "ground_distance", "visible", "rbdlthtarg", "upoprbu", "cellavcap", "sufcapch"]]
 
         return buffers_gdf, pois_within_cellsites
 

@@ -103,7 +103,7 @@ class Visibility:
         else:
             self._log('info', 'SRTM data will not be used')
             self.analysis_stats['srtm_data_download_time'] = 0
-        
+
         self.analysis_param = dict(
             poi_antenna_height=poi_antenna_height,
             allowed_radio_types=allowed_radio_types,
