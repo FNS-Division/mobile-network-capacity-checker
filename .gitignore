@@ -1,55 +1,29 @@
-# Ignore documentation files
-documentation/*
+# Documentation
+documentation/
 
-# Ignore everything in data/auxiliary_data
-data/auxiliary_data/*
+# Data directories
+data/auxiliary_data/
+data/output_data/
 
-# Ignore all files in the output_data folder
-data/output_data/*
-
-# Ignore everything in data/input_data
-data/input_data/*
-
-# Un-ignore specific files to track
-# STP files
-!data/input_data/STP/
-!data/input_data/STP/STP-1713385818-4t89-pointofinterest.csv
-!data/input_data/STP/STP-1713438795-bivd-cellsite.csv
-
-# ESP files
-!data/input_data/ESP/
-!data/input_data/ESP/cell-sites.csv
-!data/input_data/ESP/points-of-interest.csv
-!data/input_data/ESP/visibility.csv
-!data/input_data/ESP/area.gpkg
-!data/input_data/ESP/mobile-coverage.gpkg
-
-# Un-ignore encrypted datasets but keep specific CSVs ignored
-!data/input_data/carrier_bandwidth/
-!data/input_data/carrier_bandwidth/*.enc
-!data/input_data/frequency/
-!data/input_data/frequency/*.enc
-
-# Ignore specific CSVs in carrier_bandwidth and frequency
+# Input data exceptions
+data/input_data/carrier_bandwidth/*.enc
+data/input_data/frequency/*.enc
 data/input_data/carrier_bandwidth/bwdistance_km.csv
 data/input_data/carrier_bandwidth/bwdlachievbr_kbps.csv
 data/input_data/frequency/bwdistance_km.csv
 data/input_data/frequency/bwdlachievbr_kbps.csv
 
-# Ignore zip files
+# Compressed and image files
 *.zip
 *.tif
 
-# Python cache files
+# Python cache
 __pycache__/
-**/__pycache__/
 *.pyc
 
-# Jupyter Notebook checkpoints
+# Jupyter Notebook
 .ipynb_checkpoints
 .ipynb_aml_checkpoints
-*/.ipynb_checkpoints/*
-*/.ipynb_aml_checkpoints/*
 
 # System files
 .DS_Store
@@ -57,19 +31,14 @@ __pycache__/
 # IDE files
 .idea/
 
-# Configuration files
+# Configuration and sensitive files
 config*
+*.key
+*.env
 
 # Log files
-logs/*
+logs/
 
-# Keys
-*.key
-
-# Azure ML specific files
+# Azure ML specific
 *.amltmp
 *.amlignore
-*.amlignore.amltmp
-
-# Environment files
-*.env
