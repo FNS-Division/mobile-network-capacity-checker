@@ -1,6 +1,5 @@
 import numpy as np
 import pandas as pd
-from shapely.geometry import LineString
 from scipy.spatial import cKDTree
 import time
 import logging
@@ -16,39 +15,40 @@ class Visibility:
     """
     A module for computing visibility between points of interest and cell sites.
 
-    Args:
+    This class performs line-of-sight analysis between points of interest (POIs) and cell sites
+    using SRTM (Shuttle Radar Topography Mission) data for elevation information. It takes into
+    account Earth's curvature and atmospheric refraction for accurate visibility calculations.
+
+    Attributes:
         points_of_interest (PointOfInterestCollection): Collection of points of interest.
         cell_sites (CellSiteCollection): Collection of cell sites.
         srtm_data_handler (SRTMDataHandler): Handler for SRTM data.
-        cellsite_search_radius (int): The search radius around the point of interest (in meters),
-          within which cell sites will be considered for the visibility analysis.
-        poi_antenna_height (float): The antenna height at the point of interest locations (in meters),
-            used for creating the line of sight and performing the analysis.
-        num_visible_cellsites (int, optional): The number of visible cell sites to be extracted for each poi during the search. Default is 3.
-        allowed_radio_types (list, optional): List of allowed radio types. Default is ['unknown', '2G', '3G', '4G', '5G'].
-        earth_radius (float, optional): The radius of the Earth in kilometers. Default is 6371.
-        refraction_coef (float, optional): The refraction coefficient. Default is 0.
+        poi_antenna_height (float): Antenna height at POI locations (meters).
+        allowed_radio_types (list): List of allowed radio types for cell sites.
+        earth_radius (float): Radius of the Earth (kilometers).
+        refraction_coef (float): Atmospheric refraction coefficient.
+        use_srtm (bool): Flag to use SRTM data for elevation information.
+        logger (Logger): Logger instance for logging operations.
+
+    Args:
+        points_of_interest (PointOfInterestCollection): Collection of points of interest.
+        cell_sites (CellSiteCollection): Collection of cell sites.
+        srtm_data_handler (SRTMDataHandler, optional): Handler for SRTM data. Required if use_srtm is True.
+        poi_antenna_height (float, optional): Antenna height at POI locations (meters). Defaults to 15.
+        allowed_radio_types (list, optional): List of allowed radio types. Defaults to ['unknown', '2G', '3G', '4G', '5G'].
+        earth_radius (float, optional): Radius of the Earth (kilometers). Defaults to 6371.
+        refraction_coef (float, optional): Atmospheric refraction coefficient. Defaults to 0.
+        use_srtm (bool, optional): Flag to use SRTM data for elevation information. Defaults to True.
         logger (Logger, optional): Logger instance for logging. If None, a default logger is created.
-
-    Properties:
-        results_table (pd.DataFrame): DataFrame containing the results.
-        storage_table (pd.DataFrame): DataFrame containing the storage results.
-
-    Methods:
-        retrieve_srtm_data_files(): Retrieve SRTM data files for points of interest and cell sites.
-        perform_analysis(): Perform visibility analysis.
-        get_results_table(): Get the results table.
-        get_storage_table(): Get the storage table.
-        format_analysis_summary(): Format the analysis summary.
+        enable_logging (bool, optional): Flag to enable logging. Defaults to False.
+        logs_dir (str, optional): Directory for log files. Required if enable_logging is True and logger is None.
     """
 
     def __init__(self,
                  points_of_interest: PointOfInterestCollection,
                  cell_sites: CellSiteCollection,
                  srtm_data_handler: SRTMDataHandler = None,
-                 cellsite_search_radius=35000,
                  poi_antenna_height=15,
-                 num_visible_cellsites: int = 3,
                  allowed_radio_types: list = ['unknown', '2G', '3G', '4G', '5G'],
                  earth_radius=6371,
                  refraction_coef=0,
@@ -61,18 +61,21 @@ class Visibility:
         self.points_of_interest = points_of_interest
         self.cell_sites = cell_sites
         self.srtm_data_handler = srtm_data_handler
-        self.cellsite_search_radius = cellsite_search_radius
         self.poi_antenna_height = poi_antenna_height
-        self.num_visible_cellsites = num_visible_cellsites
         self.allowed_radio_types = allowed_radio_types
         self.earth_radius = earth_radius
         self.refraction_coef = refraction_coef
         self.use_srtm = use_srtm
         self.logs_dir = logs_dir
         self.enable_logging = enable_logging
+        # Create index mappings for faster lookups
+        self.poi_id_to_index = {poi_id: index for index, poi_id in enumerate(self.points_of_interest.data["poi_id"])}
+        self.ict_id_to_index = {ict_id: index for index, ict_id in enumerate(self.cell_sites.data["ict_id"])}
 
-        self._results_table = None
-        self._storage_table = None
+        self.analysis_stats = dict(
+            num_points_of_interest=len(points_of_interest),
+            num_cell_sites=len(cell_sites),
+        )
 
         if len(allowed_radio_types) < 5:
             self.cell_sites = cell_sites.filter_sites_by_radio_type(allowed_radio_types=allowed_radio_types)
@@ -91,16 +94,19 @@ class Visibility:
         else:
             self.logger = None
 
+        # Retrieve SRTM data files for points of interest and cell sites
+        srtm_time = time.time()
+        if self.use_srtm:
+            self.retrieve_srtm_data_files()
+            self.analysis_stats['srtm_data_download_time'] = round(time.time() - srtm_time, 2)
+            self.srtm_collection = self.srtm_data_handler.srtmheightmapcollection
+        else:
+            self._log('info', 'SRTM data will not be used')
+            self.analysis_stats['srtm_data_download_time'] = 0
+        
         self.analysis_param = dict(
-            cellsite_search_radius=cellsite_search_radius,
             poi_antenna_height=poi_antenna_height,
-            num_visible_cellsites=num_visible_cellsites,
             allowed_radio_types=allowed_radio_types,
-        )
-
-        self.analysis_stats = dict(
-            num_points_of_interest=len(points_of_interest),
-            num_cell_sites=len(cell_sites),
         )
 
     def _log(self, level, message):
@@ -114,18 +120,6 @@ class Visibility:
                 self.logger.error(message)
             elif level == 'debug':
                 self.logger.debug(message)
-
-    @property
-    def results_table(self):
-        if self._results_table is None:
-            self._results_table = self.get_results_table()
-        return self._results_table
-
-    @property
-    def storage_table(self):
-        if self._storage_table is None:
-            self._storage_table = self.get_storage_table()
-        return self._storage_table
 
     def retrieve_srtm_data_files(self):
         """
@@ -144,12 +138,8 @@ class Visibility:
         unique_data_files, unmatched_indices = self.srtm_data_handler.locate_data_files(all_loc)
 
         if not len(unmatched_indices) == 0:
-
             self.unmatched_indices = unmatched_indices
-
-            self.logger.error(
-                f'{len(unmatched_indices)} locations could not be matched with SRTM data files. \
-                    Please see "unmatched_indices" property of the visibility intance!')
+            self._log('error', f'{len(unmatched_indices)} locations could not be matched with SRTM data files. Please see "unmatched_indices" property of the visibility intance!')
 
         data_files_to_download = self.srtm_data_handler.datafile_check(list(unique_data_files))
 
@@ -157,211 +147,70 @@ class Visibility:
 
         self.srtm_data_handler.download_data_files(data_files=list(data_files_to_download))
 
-    def perform_analysis(self):
+    def perform_pair_analysis(self, poi_id, ict_id):
         """
-        Perform visibility analysis.
+        Perform visibility analysis between a point of interest and a cell site.
+
+        Args:
+            poi_id (str): ID of the point of interest.
+            ict_id (str): ID of the cell site.
+
+        Returns:
+            bool: True if there's a clear line of sight, False otherwise.
+
+        Raises:
+            ValueError: If provided poi_id or ict_id is invalid.
         """
+        # Retrieve indices for faster entity lookup
+        poi_index = self.poi_id_to_index.get(poi_id)
+        cellsite_index = self.ict_id_to_index.get(ict_id)
 
-        if len(self.cell_sites) == 0:
-            raise ValueError("No cellsites available with desired radio constraint")
+        if poi_index is None or cellsite_index is None:
+            raise ValueError(f"Invalid poi_id {poi_id} or ict_id {ict_id}")
 
-        srtm_time = time.time()
-        if self.use_srtm:
-            # Retrieve SRTM data files for points of interest and cell sites
-            self.retrieve_srtm_data_files()
-            self.analysis_stats['srtm_data_download_time'] = round(time.time() - srtm_time, 2)
-            srtm_collection = self.srtm_data_handler.srtmheightmapcollection
-        else:
-            self._log('info', 'SRTM data will not be used')
-            self.analysis_stats['srtm_data_download_time'] = 0
+        # Get the point of interest and cell site entities
+        poi = self.points_of_interest.get_nth_entity(poi_index)
+        cellsite = self.cell_sites.get_nth_entity(cellsite_index)
 
-        analysis_time = time.time()
+        # Calculate the ground distance between POI and cell site
+        ground_distance = round(poi.get_distance(cellsite))
 
-        # Create a KDTree for cell sites for efficient spatial queries
-        cellsite_tree = cKDTree(
-            self.cell_sites.get_lat_lon_pairs()
+        # Calculate antenna altitudes for the point of interest and cell site
+        try:
+            poi_antenna_altitude = self.srtm_collection.get_altitude(poi.lat, poi.lon) + self.poi_antenna_height
+            cellsite_antenna_altitude = self.srtm_collection.get_altitude(cellsite.lat, cellsite.lon) + cellsite.antenna_height
+        except AttributeError as e:
+            self._log('error', f"Error accessing SRTM data: {str(e)}")
+            return False
+
+        # Check if the cell site is within the search radius and visible based on horizon distances
+        if ground_distance > sum_of_horizon_distances(poi_antenna_altitude, cellsite_antenna_altitude):
+            return False
+
+        # Get elevation profile between POI and cell site
+        try:
+            elevation_profile = self.srtm_collection.get_elevation_profile(poi.lat, poi.lon, cellsite.lat, cellsite.lon)
+            e_profile, d_profile = zip(*[(i.elevation, i.distance) for i in elevation_profile])
+        except Exception as e:
+            self._log('error', f"Error retrieving elevation profile: {str(e)}")
+            return False
+
+        # Adjust extremely high elevation values (possibly due to data errors)
+        e_profile = [e - 65535 if e > 65000 else e for e in e_profile]
+
+        # Adjust elevation profile to incorporate Earth curvature
+        curvature_adjustment = [adjust_elevation(poi_antenna_altitude, d, self.earth_radius, self.refraction_coef)
+                                for d in d_profile]
+        adjusted_e_profile = np.add(e_profile, curvature_adjustment)
+
+        # Calculate line of sight profile
+        los_profile = np.linspace(
+            adjusted_e_profile[0] + self.poi_antenna_height,
+            adjusted_e_profile[-1] + cellsite.antenna_height,
+            len(e_profile)
         )
 
-        # Initialize the total visibility checks counter
-        self.analysis_stats['total_visibility_checks'] = 0
+        # Check if line of sight is clear (all points above terrain)
+        has_line_of_sight = np.all(los_profile > adjusted_e_profile)
 
-        # Initialize a dictionary to store analysis results
-        analysis_results = dict()
-
-        # Iterate over each point of interest
-        total_pois = len(self.points_of_interest.entities)
-        for i, poi in enumerate(self.points_of_interest.entities, 1):
-            log_progress_bar(self.logger, i, total_pois, prefix='Visibility analysis progress:', suffix='Complete', length=50)
-            self._log("info", f"Performing visibility analysis for point of interest {poi.poi_id}")
-
-            # Initialize variables to track the number of visible cell sites and store analysis results for the current point of interest
-            num_visible = 0
-            analysis_results.update({poi.poi_id: dict(is_visible=False, visible_cellsites=dict())})
-
-            # Query cell sites within the search radius using KDTree
-            _, cellsite_index = cellsite_tree.query([poi.lat, poi.lon], len(self.cell_sites))
-
-            # Initialize a counter for the number of visibility checks
-            num_visibility_checks = 0
-
-            # Iterate until the required number of visible cell sites is reached
-            while num_visible < self.num_visible_cellsites:
-                # Get the cell site from the current index
-                if num_visibility_checks < len(cellsite_index):
-                    cellsite = self.cell_sites.get_nth_entity(cellsite_index[num_visibility_checks])
-                else:
-                    break
-                # Increment the visibility checks counter
-                num_visibility_checks += 1
-
-                # Calculate ground distance between the point of interest and cell site
-                ground_distance = round(poi.get_distance(cellsite))
-
-                # The rest of this loop can be ignored if we want to use SRTM data (simple analysis)
-                # We simply check if the distance between the cell site and the POI is within the radius
-                if not self.use_srtm:
-                    if (ground_distance <= self.cellsite_search_radius):
-                        num_visible += 1
-                        analysis_results[poi.poi_id]['visible_cellsites'][cellsite.ict_id] = dict(
-                            lat=cellsite.lat,
-                            lon=cellsite.lon,
-                            radio_type=cellsite.radio_type,
-                            ground_distance=ground_distance,
-                            antenna_los_distance=ground_distance,
-                            azimuth_angle=calculate_azimuth(poi.lat, poi.lon, cellsite.lat, cellsite.lon),
-                            los_geometry=LineString([poi.get_point_geometry(), cellsite.get_point_geometry()])
-                        )
-                    continue
-
-                # Calculate antenna altitudes for the point of interest and cell site
-                poi_antenna_altitude = srtm_collection.get_altitude(poi.lat, poi.lon) + self.poi_antenna_height
-                cellsite_antenna_altitude = srtm_collection.get_altitude(
-                    cellsite.lat, cellsite.lon) + cellsite.antenna_height
-
-                # Check if the cell site is within the search radius and visible based on horizon distances
-                if ground_distance > self.cellsite_search_radius or ground_distance > sum_of_horizon_distances(poi_antenna_altitude, cellsite_antenna_altitude):
-                    # Break if the cell site is beyond the search radius or not visible
-                    break
-
-                # Get elevation and distance profiles between the point of interest and cell site
-                e_profile, d_profile = zip(
-                    *[(i.elevation, i.distance) for i in srtm_collection.get_elevation_profile(poi.lat, poi.lon, cellsite.lat, cellsite.lon)])
-
-                # Map extreme elevation values to below sea level
-                e_profile = list(map(lambda x: x - 65535 if x > 65000 else x, e_profile))
-
-                # Adjust elevation profile to incorporate Earth curvature
-                curvature_adjustment = list(map(lambda x: adjust_elevation(
-                    poi_antenna_altitude, x, self.earth_radius, self.refraction_coef), d_profile))
-                adjusted_e_profile = np.add(e_profile, curvature_adjustment)
-
-                # Calculate line of sight profile
-                los_profile = np.linspace(
-                    adjusted_e_profile[0] + self.poi_antenna_height, adjusted_e_profile[-1] + cellsite.antenna_height, len(e_profile))
-                # Check if line of sight is clear (all points above terrain)
-                has_line_of_sight = np.all(los_profile > adjusted_e_profile)
-
-                # Increment the number of visible cell sites if there is line of sight
-                num_visible += has_line_of_sight
-
-                if has_line_of_sight:
-                    # Store analysis results for the visible cell site
-                    analysis_results[poi.poi_id]['visible_cellsites'][cellsite.ict_id] = dict(
-                        lat=cellsite.lat,
-                        lon=cellsite.lon,
-                        radio_type=cellsite.radio_type,
-                        ground_distance=ground_distance,
-                        antenna_los_distance=round(line_of_sight_distance_with_altitude(
-                            poi.lat, poi.lon, poi_antenna_altitude, cellsite.lat, cellsite.lon, cellsite_antenna_altitude)),
-                        azimuth_angle=calculate_azimuth(poi.lat, poi.lon, cellsite.lat, cellsite.lon),
-                        los_geometry=LineString([poi.get_point_geometry(), cellsite.get_point_geometry()])
-                    )
-
-            # Update the analysis results with the visibility status and total visibility checks
-            analysis_results[poi.poi_id].update(is_visible=num_visible > 0)
-            self.analysis_stats['total_visibility_checks'] += num_visibility_checks
-
-        self.analysis_stats['analysis_time'] = round(time.time() - analysis_time, 2)
-        self.analysis_stats['total_time_elapsed'] = round(time.time() - srtm_time, 2)
-        self.analysis_stats['avg_visibility_checks_per_poi'] = round(
-            self.analysis_stats['total_visibility_checks'] / len(self.points_of_interest), 2)
-        self.analysis_results = analysis_results
-        self._log("info", self.format_analysis_summary())
-
-    def get_results_table(self):
-        """
-        Get the results table.
-
-        Returns:
-            pd.DataFrame: DataFrame containing the results.
-        """
-        df_results = self.get_storage_table()
-        df_results['num_visible'] = df_results['visible_cellsites'].apply(lambda x: len(x))
-        aux_tables = []
-
-        # Iterate over each row in storage_table
-        for _, row in df_results.iterrows():
-
-            # No visible cell towers
-            if row["num_visible"] == 0:
-                aux_table = pd.DataFrame({
-                    'poi_id': [row["poi_id"]],
-                    'is_visible': row['is_visible'],
-                    'num_visible': [row['num_visible']],
-                    'order': [1],
-                    'ict_id': [None],
-                    'radio_type': [None],
-                    'ground_distance': [None],
-                    'antenna_los_distance': [None],
-                    'azimuth_angle': [None],
-                    'vis_geometry': [None]
-                })
-                aux_tables.append(aux_table)
-
-            # At least one visible cell tower
-            if row["num_visible"] > 0:
-                aux_table = pd.DataFrame(row["visible_cellsites"]).transpose().reset_index().rename(columns={"index": "ict_id"})
-                aux_table["poi_id"] = row["poi_id"]
-                aux_table['is_visible'] = row['is_visible']
-                aux_table['num_visible'] = row['num_visible']
-                aux_table['order'] = aux_table['ground_distance'].rank(method='average', ascending=True).astype(int)
-                aux_table = aux_table.rename(columns={'los_geometry': 'vis_geometry'})
-                aux_table = aux_table.drop(columns=['lat', 'lon'])
-                poi_id = aux_table.pop('poi_id')
-                aux_table.insert(0, 'poi_id', poi_id)
-                aux_tables.append(aux_table)
-
-        # Concatenate all DataFrames in the list into a single DataFrame
-        result_table = pd.concat(aux_tables, ignore_index=True)
-
-        return result_table
-
-    def get_storage_table(self):
-        """
-        Get the storage table.
-
-        Returns:
-            pd.DataFrame: DataFrame containing the storage results.
-        """
-        df_storage = pd.DataFrame(self.analysis_results.values())
-        df_storage.insert(0, 'poi_id', self.analysis_results.keys())
-
-        return df_storage
-
-    def format_analysis_summary(self):
-        """
-        Format the analysis summary.
-        """
-        summary = ""
-
-        # Format the analysis_stats dictionary into a human-readable summary
-        summary += "Visibility Analysis Summary:\n"
-        summary += f"Number of points of interest: {self.analysis_stats['num_points_of_interest']}\n"
-        summary += f"Number of cell sites: {self.analysis_stats['num_cell_sites']}\n"
-        summary += f"Total visibility checks performed: {self.analysis_stats['total_visibility_checks']}\n"
-        summary += f"Average visibility checks per point of interest: {self.analysis_stats['avg_visibility_checks_per_poi']}\n"
-        summary += f"Time taken for SRTM data download: {self.analysis_stats['srtm_data_download_time']} seconds\n"
-        summary += f"Time taken for analysis: {self.analysis_stats['analysis_time']} seconds\n"
-        summary += f"Total time elapsed: {self.analysis_stats['total_time_elapsed']} seconds\n"
-
-        return summary
+        return has_line_of_sight
