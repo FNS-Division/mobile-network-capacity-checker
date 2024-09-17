@@ -251,38 +251,6 @@ def get_population_sum_raster(geometry, rasterpath):
         return None
 
 
-def vectorized_population_sum(buffer_cellsites, population_data, radius):
-    """
-    Calculates the population sum within clipped ring geometries for all cell sites at once using GeoPandas.
-
-    Parameters:
-    - buffer_cellsites (GeoDataFrame): A GeoDataFrame containing the clipped ring geometries.
-    - population_data (GeoDataFrame): A GeoDataFrame containing point geometries and a 'population' column.
-    - radius (int): The radius for which to calculate the population sum.
-
-    Returns:
-    - Series: The population sum within each clipped ring geometry.
-    """
-    # Ensure CRS match
-    if buffer_cellsites.crs != population_data.crs:
-        population_data = population_data.to_crs(buffer_cellsites.crs)
-
-    # Clipped ring column name
-    clring_column = f'clring_{radius}'
-
-    # Create a temporary GeoDataFrame with only the clipped ring geometries
-    temp_gdf = gpd.GeoDataFrame(geometry=buffer_cellsites[clring_column], crs=buffer_cellsites.crs)
-
-    # Perform spatial join
-    joined = gpd.sjoin(population_data, temp_gdf, how='inner', predicate='within')
-
-    # Group by the index of buffer_cellsites and sum the population
-    population_sums = joined.groupby(joined.index_right)['population'].sum()
-
-    # Reindex to ensure we have a value for all original cell sites, filling missing values with 0
-    return population_sums.reindex(buffer_cellsites.index, fill_value=0)
-
-
 def process_tif(input_file, drop_nodata=True):
     # Read the input raster data
     with rasterio.open(input_file) as src:

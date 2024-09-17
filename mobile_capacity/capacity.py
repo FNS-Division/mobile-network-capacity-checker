@@ -1,4 +1,4 @@
-from mobile_capacity.spatial import meters_to_degrees_latitude, create_voronoi_cells, vectorized_population_sum
+from mobile_capacity.spatial import meters_to_degrees_latitude, create_voronoi_cells
 from mobile_capacity.utils import initialize_logger, log_progress_bar
 from mobile_capacity.handlers.populationdatahandler import PopulationDataHandler
 from mobile_capacity.handlers.srtmdatahandler import SRTMDataHandler
@@ -202,20 +202,17 @@ class Capacity:
         Calculate the downlink bitrate based on the given POI distances.
 
         Parameters:
-        - poi_distances (list): List of POI distances in meters, can contain a single or multiple distances.
+        - poi_distances (list, numpy array, or pandas Series): POI distances in meters.
 
         Returns:
         - np.ndarray: Array of downlink bitrates corresponding to each POI distance.
 
         Note:
         - `bwdistance_k` and `bwdlachievbr` are expected to be pandas DataFrames with columns
-          named as `{bandwidth}MHz`.
+        named as `{bandwidth}MHz`.
         """
-        if not isinstance(poi_distances, list):
-            poi_distances = [poi_distances]
-
         # Convert input distances to numpy array
-        poi_distances = np.array(poi_distances) / 1000  # converts distances in meters to kilometers
+        poi_distances = np.array(poi_distances, dtype=float).flatten() / 1000  # converts distances in meters to kilometers
 
         # Create weights
         weights = np.array([self.bw_L850 / self.bw, self.bw_L1800 / self.bw, self.bw_L2600 / self.bw])
@@ -252,34 +249,34 @@ class Capacity:
         Calculate the number of resource blocks required to meet the download throughput target for each distance.
 
         Parameters:
-        - d (list): List of distances from the tower in meters.
+        - d (list, numpy array, or pandas Series): Distances from the tower in meters.
 
         Returns:
-        - list: List of resource blocks required to meet the download throughput target for each distance.
-                    Returns np.inf for distances exceeding max_radius or None if an error occurs.
+        - np.ndarray: Array of resource blocks required to meet the download throughput target for each distance.
+                    Returns np.inf for distances exceeding max_radius or np.nan if an error occurs.
         """
-        if not isinstance(d, list):
-            d = [d]
+        # Convert input to numpy array
+        d = np.array(d, dtype=float).flatten()
 
-        results = []
+        results = np.full(d.shape, np.nan)
         try:
             # Get the downlink bitrate for the given distances
             dl_bitrate = self.get_dl_bitrate(poi_distances=d)
-            for i, distance in enumerate(d):
-                # Compute the number of resource blocks required to meet the download throughput target
-                if distance > self.max_radius:
-                    rbdlthtarg = np.inf
-                else:
-                    rbdlthtarg = self.dlthtarg * 1024 / (dl_bitrate[i] / self.avrbpdsch)
-                # Log the result for each distance
+            
+            # Vectorized computation
+            mask = d <= self.max_radius
+            results[mask] = self.dlthtarg * 1024 / (dl_bitrate[mask] / self.avrbpdsch)
+            results[~mask] = np.inf
+            
+            # Log the results
+            for distance, rbdlthtarg in zip(d, results):
                 self._log("debug", f'distance = {distance}, rbdlthtarg = {rbdlthtarg}')
-                results.append(rbdlthtarg)
+        
         except ValueError as e:
             self._log("info", f"ValueError in poiddatareq: {e}")
-            results = [None] * len(d)
         except Exception as e:
             self._log("info", f"An error occurred in poiddatareq: {e}")
-            results = [None] * len(d)
+        
         return results
 
     def brrbpopcd(self, popcd):
@@ -287,29 +284,32 @@ class Capacity:
         Bitrate per resource block at population center distance.
 
         Parameters:
-        - popcd (int): Population center distance in meters.
+        - popcd (int, float, list, numpy array, or pandas Series): Population center distance(s) in meters.
 
         Returns:
-        - brrbpopcd (float): Bitrate per resource block at population center distance in kbps.
+        - np.ndarray: Bitrate per resource block at population center distance(s) in kbps.
+                    Returns np.nan for any errors encountered.
         """
-        if not isinstance(popcd, list):
-            popcd = [popcd]
+        # Convert input to numpy array
+        popcd = np.array(popcd, dtype=float).flatten()
 
-        results = []
+        results = np.full(popcd.shape, np.nan)
         try:
             # Get the downlink bitrate for the given distances
             dl_bitrate = self.get_dl_bitrate(poi_distances=popcd)
-            for i, distance in enumerate(popcd):
-                # Compute the bitrate per resource block at the population center distance
-                brrbpopcd = dl_bitrate[i] / self.avrbpdsch
-                self._log("debug", f'population centre distance = {distance}, brrbpopcd = {brrbpopcd}')
-                results.append(brrbpopcd)
+            
+            # Vectorized computation
+            results = dl_bitrate / self.avrbpdsch
+            
+            # Log the results
+            for distance, brrbpopcd_value in zip(popcd, results):
+                self._log("debug", f'population centre distance = {distance}, brrbpopcd = {brrbpopcd_value}')
+        
         except ValueError as e:
             self._log("info", f"ValueError in brrbpopcd: {e}")
-            results = [None] * len(popcd)
         except Exception as e:
             self._log("info", f"An error occurred in brrbpopcd: {e}")
-            results = [None] * len(popcd)
+        
         return results
 
     def avubrnonbh(self, udatavmonth):
@@ -366,23 +366,26 @@ class Capacity:
         User population resource blocks utilisation
 
         Parameters:
-        - upopbr (float): User Population Bitrate in kbps.
-        - brrbpopcd (float): Bitrate per resource block at population center distance in kbps.
+        - upopbr (float, int, or array-like): User Population Bitrate in kbps.
+        - brrbpopcd (float, int, or array-like): Bitrate per resource block at population center distance in kbps.
 
         Returns:
-        - upoprbu (float): User population resource blocks utilisation in units.
+        - np.ndarray: User population resource blocks utilisation in units.
 
         Note:
+        If upopbr is a scalar and brrbpopcd is an array, the function will broadcast upopbr to match brrbpopcd's shape.
         """
-        if not isinstance(upopbr, list):
-            upopbr = [upopbr]
-        if not isinstance(brrbpopcd, list):
-            brrbpopcd = [brrbpopcd]
-        if len(upopbr) > 1:
-            raise ValueError("upopbr is not of length 1.")
+        # Convert inputs to numpy arrays
+        upopbr = np.array(upopbr, dtype=float).flatten()
+        brrbpopcd = np.array(brrbpopcd, dtype=float).flatten()
+
+        # Check if upopbr is a scalar (single value)
+        if upopbr.size != 1 and upopbr.size != brrbpopcd.size:
+            raise ValueError(f"upopbr must be a scalar or have the same size as brrbpopcd. upopbr size: {upopbr.size}, brrbpopcd size: {brrbpopcd.size}")
 
         # Calculate user population resource blocks utilisation in units.
-        upoprbu = [upopbr[0] / denom for denom in brrbpopcd]
+        upoprbu = upopbr / brrbpopcd
+
         self._log("debug", f'upoprbu = {upoprbu}')
         return upoprbu
 
@@ -391,23 +394,26 @@ class Capacity:
         Cell site available capacity check.
 
         Parameters:
-        - avrbpdsch (float): Resource blocks available for PDSCH, resource blocks.
-        - upoprbu (float): User population resource blocks utilisation, resource blocks.
+        - avrbpdsch (float, int, or array-like): Resource blocks available for PDSCH, resource blocks.
+        - upoprbu (float, int, or array-like): User population resource blocks utilisation, resource blocks.
 
         Returns:
-        - cellavcap (float): Shows available capacity at the cell site, resource blocks.
+        - np.ndarray: Shows available capacity at the cell site, resource blocks.
 
         Note:
+        If avrbpdsch is a scalar and upoprbu is an array, the function will broadcast avrbpdsch to match upoprbu's shape.
         """
-        if not isinstance(avrbpdsch, np.ndarray):
-            avrbpdsch = np.array(avrbpdsch)
-        # Check if upoprbu is not already a NumPy array, convert if necessary
-        if not isinstance(upoprbu, np.ndarray):
-            upoprbu = np.array(upoprbu)
+        # Convert inputs to numpy arrays
+        avrbpdsch = np.array(avrbpdsch, dtype=float).flatten()
+        upoprbu = np.array(upoprbu, dtype=float).flatten()
 
-        # Cell site available capacity.
+        # Check if avrbpdsch is a scalar (single value)
+        if avrbpdsch.size != 1 and avrbpdsch.size != upoprbu.size:
+            raise ValueError(f"avrbpdsch must be a scalar or have the same size as upoprbu. avrbpdsch size: {avrbpdsch.size}, upoprbu size: {upoprbu.size}")
+
+        # Cell site available capacity calculation
         cellavcap = avrbpdsch - upoprbu
-        cellavcap = cellavcap.tolist()
+
         self._log("debug", f'cellavcap = {cellavcap}')
 
         return cellavcap
@@ -417,21 +423,26 @@ class Capacity:
         Sufficient capacity check
 
         Parameters:
-        - cellavcap (float): Shows available capacity at the cell site, resource blocks.
-        - rbdlthtarg (float): RB number required to meet download throughput target in units.
+        - cellavcap (float, int, or array-like): Shows available capacity at the cell site, resource blocks.
+        - rbdlthtarg (float, int, or array-like): RB number required to meet download throughput target in units.
 
         Returns:
-        - sufcapch (boolean): Shows that capacity requirement is satisfied.
+        - np.ndarray: Boolean array showing whether capacity requirement is satisfied for each element.
 
         Note:
+        If one input is a scalar and the other is an array, the function will broadcast the scalar to match the array's shape.
         """
-        if not isinstance(cellavcap, np.ndarray):
-            cellavcap = np.array(cellavcap)
-        if not isinstance(rbdlthtarg, np.ndarray):
-            rbdlthtarg = np.array(rbdlthtarg)
+        # Convert inputs to numpy arrays
+        cellavcap = np.array(cellavcap, dtype=float).flatten()
+        rbdlthtarg = np.array(rbdlthtarg, dtype=float).flatten()
 
+        # Check if inputs have compatible sizes
+        if cellavcap.size != 1 and rbdlthtarg.size != 1 and cellavcap.size != rbdlthtarg.size:
+            raise ValueError(f"Inputs must have the same size or one must be a scalar. cellavcap size: {cellavcap.size}, rbdlthtarg size: {rbdlthtarg.size}")
+
+        # Sufficient capacity check
         sufcapch = cellavcap > rbdlthtarg
-        sufcapch = sufcapch.tolist()
+
         self._log("debug", f'sufcapch = {sufcapch}')
         return sufcapch
 
@@ -519,7 +530,7 @@ class Capacity:
         def _get_visibility_status(row):
             log_progress_bar(self.logger, row.name + 1, len(pois_within_cellsites), prefix='Visibility Analysis:', length=50)
             if pd.isna(row["ict_id"]):
-                return np.nan
+                return np.nan, np.nan
             else:
                 return self.visibility.perform_pair_analysis(row["poi_id"], row["ict_id"])
 
@@ -566,11 +577,11 @@ class Capacity:
             cellsites_gdf[clring_col] = cellsites_gdf.apply(lambda row: row[ring_col].intersection(row.voronoi_polygons), axis=1)
             cellsites_gdf[clbuffer_col] = cellsites_gdf.apply(lambda row: row[buffer_col].intersection(row.voronoi_polygons), axis=1)
 
-        # Convert buffers to long format (only for the maximum radius buffer)
+        # Convert clipped buffers to long format (only for the maximum radius buffer)
         buffers_gdf = cellsites_gdf[['ict_id', f'clbuffer_{self.max_radius}']].rename(columns={f'clbuffer_{self.max_radius}': 'geometry'})
         buffers_gdf = gpd.GeoDataFrame(buffers_gdf, geometry='geometry', crs=poi_utm)
 
-        # Convert rings to long format
+        # Convert clipped rings to long format
         rings_columns = ['ict_id'] + [col for col in cellsites_gdf.columns if col.startswith('clring')]
         rings_gdf = cellsites_gdf[rings_columns].melt(id_vars='ict_id', var_name='buffer_column', value_name='geometry')
         rings_gdf['buffer'] = rings_gdf['buffer_column'].str.extract(r'(\d+)').astype(int)
@@ -579,12 +590,43 @@ class Capacity:
 
         # Match POIs to cell towers based on coverage area
         pois_within_cellsites = gpd.sjoin(pois_gdf, buffers_gdf, how='left', predicate='within')            
-        pois_within_cellsites["visible"] = pois_within_cellsites.apply(_get_visibility_status, axis=1)
+        pois_within_cellsites["ground_distance"], pois_within_cellsites["visible"] = zip(*pois_within_cellsites.apply(_get_visibility_status, axis=1))
 
-        # PRINT
-        print("pois_within_cellsites")
-        print(pois_within_cellsites.shape)
-        print(pois_within_cellsites[["poi_id", "ict_id", "index_right", "visible"]])
+        ### POI-LEVEL COMPUTATIONS ###
+
+        # Number of resource blocks required to meet the download throughput target for each distance
+        pois_within_cellsites["rbdlthtarg"] = self.poiddatareq(pois_within_cellsites["ground_distance"])
+
+        ### RING-LEVEL COMPUTATIONS AROUND EACH CELL SITE ###
+
+        # Filter out cell sites that weren't matched to any POIs
+        rings_gdf = rings_gdf[rings_gdf["ict_id"].isin(pois_within_cellsites["ict_id"])]
+        # Bitrate per resource block at population center distance
+        rings_gdf["brrbpopcd"] = rings_gdf["radius"].map(self.brrbpopcd).apply(lambda x: x[0])
+        # Get population per ring
+        population_join = gpd.sjoin(population_gdf, rings_gdf, how='inner', predicate='within')
+        population_join = population_join.groupby(['ict_id', 'buffer']).agg({'population': 'sum'}).reset_index()
+        rings_gdf = rings_gdf.merge(population_join, on=['ict_id', 'buffer'], how='left')
+        rings_gdf["population"] = rings_gdf["population"].fillna(0)
+        # User population bitrate per ring
+        rings_gdf["upopbr"] = self.upopbr(self.avubrnonbh(self.udatavmonth_pu), rings_gdf["population"])
+        # User population resource blocks utilisation
+        rings_gdf["upoprbu"] = self.upoprbu(rings_gdf["upopbr"], rings_gdf["brrbpopcd"])
+
+        ### CELL SITE-LEVEL COMPUTATIONS ###
+
+        # Sum all rings for each cell site, yielding the total resource blocks utilisation per cell site
+        cellsites_rbu = rings_gdf.groupby('ict_id')["upoprbu"].sum().reset_index()
+        cellsites_rbu["cellavcap"] = cellsites_rbu["upoprbu"].apply(lambda row: self.cellavcap(self.avrbpdsch, row)[0])
+
+        ### MERGE POI AND CELL SITE ###
+
+        pois_within_cellsites = pois_within_cellsites.merge(cellsites_rbu, on='ict_id', how='left')
+        pois_within_cellsites["cellavcap"] = pois_within_cellsites["cellavcap"].fillna(0)
+        pois_within_cellsites["sufcapch"] = self.sufcapch(pois_within_cellsites["cellavcap"], pois_within_cellsites["rbdlthtarg"])
+        pois_within_cellsites = pois_within_cellsites[["poi_id","ict_id","ground_distance","visible","rbdlthtarg", "upoprbu", "cellavcap", "sufcapch"]]
+
+        return buffers_gdf, pois_within_cellsites
 
     # def calculate_buffer_areas(self):
     #     """
