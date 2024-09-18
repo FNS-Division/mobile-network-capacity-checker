@@ -10,8 +10,6 @@ import numpy as np
 import pandas as pd
 import geopandas as gpd
 import os
-import io
-
 
 class Capacity:
     def __init__(self,
