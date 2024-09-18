@@ -12,6 +12,55 @@ import geopandas as gpd
 import os
 
 class Capacity:
+    """
+    A class for analyzing and calculating mobile network capacity in a given area.
+
+    This class provides methods to analyze cell site coverage, population distribution,
+    and network capacity based on various parameters such as bandwidth, spectrum allocation,
+    and user data consumption.
+
+    Attributes:
+        country_code (str): ISO3 country code for the area of analysis.
+        bw_L850 (float): Bandwidth in MHz for L700 to L900 spectrum.
+        bw_L1800 (float): Bandwidth in MHz for L1800 to L2100 spectrum.
+        bw_L2600 (float): Bandwidth in MHz for L2300 to L2600 spectrum.
+        cco (float): Control channel overhead in percentage.
+        sectors_per_site (int): Number of sectors per cell site.
+        angles_num (int): Number of angles for analysis.
+        rotation_angle (float): Rotation angle in degrees.
+        dlthtarg (float): Download throughput target in Mbps.
+        mbb_subscr (float): Active mobile-broadband subscriptions per 100 people.
+        oppopshare (float): Percentage of population using operator services.
+        nonbhu (float): Connection usage in non-busy hour in percentage.
+        nbhours (int): Number of non-busy hours per day.
+        rb_num_multiplier (int): Resource block number multiplier.
+        max_radius (int): Maximum buffer radius for analysis.
+        min_radius (int): Minimum buffer radius for analysis.
+        radius_step (int): Step size for buffer radius increments.
+        cellsite_search_radius (int): Cell site search radius in meters.
+        poi_antenna_height (int): Point of interest antenna height in meters.
+        dataset_year (int): Year of the dataset being used.
+        one_km_res (bool): Flag for using 1km resolution data.
+        un_adjusted (bool): Flag for using UN-adjusted data.
+        enable_logging (bool): Flag to enable logging.
+
+    Methods:
+        _get_population_data(): Loads and returns population data.
+        get_dl_bitrate(poi_distances): Calculates downlink bitrate based on distances.
+        poiddatareq(d): Calculates required resource blocks for target throughput.
+        brrbpopcd(popcd): Calculates bitrate per resource block at population center.
+        avubrnonbh(udatavmonth): Calculates average user bitrate in non-busy hour.
+        upopbr(avubrnonbh, pop): Calculates user population bitrate.
+        upoprbu(upopbr, brrbpopcd): Calculates user population resource block utilization.
+        cellavcap(avrbpdsch, upoprbu): Calculates available cell capacity.
+        sufcapch(cellavcap, rbdlthtarg): Checks if capacity is sufficient.
+        capacity_checker(d, popcd, udatavmonth, pop): Performs overall capacity check.
+        calculate_buffer_areas(): Calculates buffer areas around cell sites.
+        mbbtps(): Calculates mobile broadband traffic per subscription.
+
+    The class uses various data sources including population data, cell site locations,
+    and terrain information to perform comprehensive network capacity analysis.
+    """
     def __init__(self,
                  country_code: str,
                  data_dir: str,
