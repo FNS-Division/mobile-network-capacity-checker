@@ -124,7 +124,7 @@ class Capacity:
         # Set up the Visibility analysis if required
         if visibility is None:
             self._log("info", "Setting up visibility analysis...")
-            self.visibility = Visibility(
+            self.visibility_analyzer = Visibility(
                 points_of_interest=self.poi,
                 cell_sites=self.cellsites,
                 srtm_data_handler=self.srtm_data_handler,
@@ -492,7 +492,6 @@ class Capacity:
         dict_result = {"upopbr": upopbr, "upoprbu": upoprbu, "cellavcap": cellavcap, "capcheck": capcheck}
         return dict_result
 
-
     def calculate_buffer_areas(self):
         """
         Calculates buffer areas around cell sites adjusted with Voronoi polygons
@@ -509,12 +508,14 @@ class Capacity:
             if pd.isna(row["ict_id"]):
                 return np.nan, np.nan
             else:
-                return self.visibility.perform_pair_analysis(row["poi_id"], row["ict_id"])
+                return self.visibility_analyzer.perform_pair_analysis(row["poi_id"], row["ict_id"])
 
         # Copy input data
         cellsites = self.cellsites.data.copy()
         poi = self.poi.data.copy()
         population_gdf = self.population_data.copy()
+        if self.visibility is not None:
+            visibility = self.visibility.data.copy()
 
         # Create GeoDataFrames for cell sites and POIs
         cellsites_gdf = gpd.GeoDataFrame(
@@ -565,9 +566,18 @@ class Capacity:
         rings_gdf = gpd.GeoDataFrame(rings_gdf.drop('buffer_column', axis=1), geometry='geometry', crs=poi_utm)
         rings_gdf['radius'] = rings_gdf['buffer'] - self.radius_step / 2
 
-        # Match POIs to cell towers based on coverage area
-        pois_within_cellsites = gpd.sjoin(pois_gdf, buffers_gdf, how='left', predicate='within')
-        pois_within_cellsites["ground_distance"], pois_within_cellsites["visible"] = zip(*pois_within_cellsites.apply(_get_visibility_status, axis=1))
+        # If visibility analysis is not provided
+        if self.visibility is None:
+            # Match POIs to cell towers based on coverage area
+            pois_within_cellsites = gpd.sjoin(pois_gdf, buffers_gdf, how='left', predicate='within')
+            pois_within_cellsites = pois_within_cellsites[["poi_id", "lat", "lon", "ict_id"]]
+            # Assess whether the POI is visible from the cell site
+            pois_within_cellsites["ground_distance"], pois_within_cellsites["is_visible"] = zip(*pois_within_cellsites.apply(_get_visibility_status, axis=1))
+        # If visibility analysis results are provided, no need to launch visibility analysis
+        else:
+            # Match POIs to cell towers based on coverage area
+            visibility_filtered = visibility.loc[visibility["order"] == 1, ["poi_id", "ground_distance", "is_visible", "ict_id"]]
+            pois_within_cellsites = pois_gdf[["poi_id", "lat", "lon"]].merge(visibility_filtered, on="poi_id", how="left")
 
         ### POI-LEVEL COMPUTATIONS ###
 
@@ -576,8 +586,6 @@ class Capacity:
 
         ### RING-LEVEL COMPUTATIONS AROUND EACH CELL SITE ###
 
-        # Filter out cell sites that weren't matched to any POIs
-        rings_gdf = rings_gdf[rings_gdf["ict_id"].isin(pois_within_cellsites["ict_id"])]
         # Bitrate per resource block at population center distance
         rings_gdf["brrbpopcd"] = rings_gdf["radius"].map(self.brrbpopcd).apply(lambda x: x[0])
         # Get population per ring
@@ -601,158 +609,17 @@ class Capacity:
         pois_within_cellsites = pois_within_cellsites.merge(cellsites_rbu, on='ict_id', how='left')
         pois_within_cellsites["cellavcap"] = pois_within_cellsites["cellavcap"].fillna(0)
         pois_within_cellsites["sufcapch"] = self.sufcapch(pois_within_cellsites["cellavcap"], pois_within_cellsites["rbdlthtarg"])
-        pois_within_cellsites = pois_within_cellsites[["poi_id", "ict_id", "ground_distance", "visible", "rbdlthtarg", "upoprbu", "cellavcap", "sufcapch"]]
+        pois_within_cellsites = pois_within_cellsites[["poi_id", "lat", "lon", "ict_id", "ground_distance", "is_visible", "rbdlthtarg", "upoprbu", "cellavcap", "sufcapch"]]
 
-        return buffers_gdf, pois_within_cellsites
+        # Export as GeoDataFrames in WGS84
+        pois_within_cellsites = gpd.GeoDataFrame(
+            pois_within_cellsites,
+            geometry=gpd.points_from_xy(pois_within_cellsites["lon"], pois_within_cellsites["lat"]),
+            crs=poi_utm)
+        for gdf in [buffers_gdf, rings_gdf, pois_within_cellsites]:
+            gdf.to_crs("4326", inplace=True)
 
-    # def calculate_buffer_areas(self):
-    #     """
-    #     Calculates buffer areas around cell sites adjusted with Voronoi polygons
-    #     representing cell sites service areas. Breaks down buffer areas into rings of a specified radius to segment
-    #     demand estimates by distance.
-
-    #     Parameters:
-    #     - cellsites (geodataframe): Cellsites data containing cell site latitudes and longitudes.
-    #     - min_radius (int): Minimum radius around cell site location for population calculation, meters.
-    #     - max_radius (int): Maximum radius around cell site location for population calculation, meters.
-    #     - radius_step (int): Radius step size for population calculation, meters.
-
-    #     Returns:
-    #     - buffer_cellsites (geodataframe): Cellsites data containing buffer areas around cell site locations.
-
-    #     Note:
-    #     """
-    #     def _poi_sufcapch(poi, visibility, buffer_cellsites_result):
-    #         """
-    #         Process and merge POI, visibility, and cell site data.
-
-    #         Args:
-    #         poi (DataFrame): POI data with 'poi_id', 'lat', and 'lon'.
-    #         visibility (DataFrame): Visibility data with 'poi_id', 'order', 'ground_distance', and 'ict_id'.
-    #         buffer_cellsites_result (DataFrame): Cell site data with 'ict_id' and other relevant columns.
-
-    #         Returns:
-    #         DataFrame: Merged and processed data indexed by 'poi_id'.
-    #         """
-    #         # Filter visibility DataFrame to include only rows where order is 1
-    #         visibility_filtered = visibility.loc[visibility["order"] == 1, :]
-
-    #         # Merge POI DataFrame with filtered visibility DataFrame on 'poi_id'
-    #         poi_merged = poi[["poi_id", "lat", "lon"]].merge(visibility_filtered, on="poi_id", how="left")
-
-    #         # Drop 'lat' and 'lon' columns from buffer_cellsites_result
-    #         buffer_cellsites_result_cleaned = buffer_cellsites_result.drop(columns=["lat", "lon"], inplace=False)
-
-    #         # Merge the POI data with the cleaned buffer_cellsites_result on 'ict_id'
-    #         poi_data_merged = (
-    #             poi_merged[['poi_id', 'lat', 'lon', 'ground_distance', 'ict_id']]
-    #             .merge(buffer_cellsites_result_cleaned, on='ict_id', how='left')
-    #             .drop(columns="ict_id")
-    #             .set_index('poi_id')
-    #         )
-
-    #         return poi_data_merged
-
-    #     # Copy input data
-    #     cellsites = self.cellsites.data.copy()
-    #     poi = self.poi.data.copy()
-
-    #     # For distance conversion from meters to degrees
-    #     central_latitude = cellsites['lat'].mean()
-
-    #     # Convert cell sites to a GeoDataFrame - assuming the input data used the EPSG 4326 CRS
-    #     # Re-project to the same CRS as the population vector data
-    #     cellsites_gdf = gpd.GeoDataFrame(
-    #         geometry=gpd.points_from_xy(
-    #             x=cellsites.lon,
-    #             y=cellsites.lat),
-    #         crs="4326",
-    #         data=cellsites)
-    #     cellsites_gdf = cellsites_gdf.to_crs(self.population_data.crs)
-
-    #     # Drop duplicated ict_ids rows from cellsites to avoid redundancy
-    #     # during Voronoi polygons generation
-    #     cellsites_gdf = cellsites_gdf.drop(
-    #         cellsites_gdf.loc[cellsites_gdf.ict_id.duplicated(), :].index)
-
-    #     # Create buffers for different radii around the cell sites
-    #     # This loop adds columns corresponding to the buffer areas and rings
-    #     buffer_cellsites = cellsites_gdf.copy().reset_index()
-    #     for radius in range(self.min_radius, self.max_radius + 1, self.radius_step):
-    #         # convert radius from meters to degrees
-    #         radius_in_degrees = meters_to_degrees_latitude(
-    #             radius, central_latitude)
-    #         # create buffer columns in the geodataframe and insert buffer
-    #         # geometries there
-    #         buffer_cellsites[f'buffer_{radius}'] = buffer_cellsites['geometry'].apply(
-    #             lambda point: point.buffer(radius_in_degrees))
-    #         # create population center distances columns in the geodataframe
-    #         # and insert distances values there
-    #         buffer_cellsites[f'popcd_{radius}'] = int(radius - self.radius_step / 2)
-    #         # create ring columns in the geodataframe and insert ring
-    #         # geometries there
-    #         if radius == self.min_radius:
-    #             # first ring is the same as the first buffer area
-    #             buffer_cellsites[f'ring_{radius}'] = buffer_cellsites[f'buffer_{radius}']
-    #         else:
-    #             # ring is the difference between current buffer and the
-    #             # previous buffer
-    #             buffer_cellsites[f'ring_{radius}'] = buffer_cellsites[f'buffer_{radius}'].difference(
-    #                 buffer_cellsites[f'buffer_{radius - self.radius_step}'])
-
-    #     # Create Voronoi cells, this adds a new column with the geometry
-    #     # corresponding to the Voronoi polygons
-    #     buffer_cellsites = create_voronoi_cells(buffer_cellsites, self.area)
-
-    #     # Check capacity for each cell site
-    #     for radius in range(self.min_radius, self.max_radius + 1, self.radius_step):
-    #         # Clip ring areas with Voronoi polygons to identify cell sites
-    #         # service areas within each ring.
-    #         buffer_cellsites[f'clring_{radius}'] = buffer_cellsites.apply(
-    #             lambda row: row[f'ring_{radius}'].intersection(row['voronoi_polygons']), axis=1)
-    #         # Calculate population count within clipped ring areas.
-    #         buffer_cellsites[f'pop_clring_{radius}'] = vectorized_population_sum(buffer_cellsites, self.population_data, radius)
-    #         # Calculate avubrnonbh, the average user bitrate in non-busy hour in kbps, from country-level statistics
-    #         avubrnonbh = self.avubrnonbh(self.udatavmonth_pu)
-    #         # Calculate user population bitrate in kbps within clipped ring areas.
-    #         buffer_cellsites[f'upopbr_{radius}'] = buffer_cellsites[f'pop_clring_{radius}'].apply(
-    #             lambda row: self.upopbr(avubrnonbh, row))
-    #         # Calculate bitrate per resource block at population center distance in kbps.
-    #         buffer_cellsites[f'brrbpopcd_{radius}'] = buffer_cellsites[f'popcd_{radius}'].apply(
-    #             lambda row: self.brrbpopcd(row)
-    #         )
-    #         # Calculate user population resource blocks utilisation within clipped ring areas.
-    #         buffer_cellsites[f'upoprbu_{radius}'] = buffer_cellsites.apply(
-    #             lambda row: self.upoprbu(row[f'upopbr_{radius}'], row[f'brrbpopcd_{radius}']), axis=1
-    #         )
-    #     # Calculate total number of cell site required resource blocks
-    #     upoprbu_columns = [col for col in buffer_cellsites.columns if col.startswith('upoprbu_')]
-    #     buffer_cellsites['upoprbu_total'] = buffer_cellsites[upoprbu_columns].apply(lambda row: [sum(x) for x in zip(*row)], axis=1)
-
-    #     # Calculate cell site available capacity
-    #     buffer_cellsites['cellavcap'] = buffer_cellsites['upoprbu_total'].apply(
-    #         lambda row: self.cellavcap(self.avrbpdsch, row))
-
-    #     # Store the buffer analysis results
-    #     self.buffer_cellsites_result = buffer_cellsites.set_index('ict_id').drop(columns='index')
-
-    #     # Trigger visibility analysis if required
-    #     if self.visibility:
-    #         visibility = self.visibility.data.copy()
-    #     else:
-    #         visibility = self.visibility_analysis()
-
-    #     # Merge POI, visibility, and cell site data
-    #     poi_data_merged = _poi_sufcapch(poi, visibility, self.buffer_cellsites_result)
-
-    #     poi_data_merged['rbdlthtarg'] = poi_data_merged['ground_distance'].apply(
-    #         lambda row: self.poiddatareq(row)
-    #     )
-    #     poi_data_merged['sufcapch'] = poi_data_merged.apply(
-    #         lambda row: self.sufcapch(row['cellavcap'], row['rbdlthtarg'])[0], axis=1
-    #     )
-    #     self.poi_sufcapch_result = poi_data_merged
-    #     return self.buffer_cellsites_result, self.poi_sufcapch_result
+        return rings_gdf, pois_within_cellsites
 
     def mbbtps(self):
         """

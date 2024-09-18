@@ -5,13 +5,17 @@ documentation/
 data/auxiliary_data/
 data/output_data/
 
-# Input data exceptions
+# Input data
 data/input_data/carrier_bandwidth/*.enc
 data/input_data/frequency/*.enc
 data/input_data/carrier_bandwidth/bwdistance_km.csv
 data/input_data/carrier_bandwidth/bwdlachievbr_kbps.csv
 data/input_data/frequency/bwdistance_km.csv
 data/input_data/frequency/bwdlachievbr_kbps.csv
+
+# Test
+tests/data/input_data/carrier_bandwidth/bwdistance_km.csv
+tests/data/input_data/carrier_bandwidth/bwdlachievbr_kbps.csv
 
 # Compressed and image files
 *.zip

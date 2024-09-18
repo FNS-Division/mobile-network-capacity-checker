@@ -694,7 +694,7 @@ def plot_layers(mobilecapacity, poi_sufcapch_result, buffer_areas, output_file=N
     pois = gpd.GeoDataFrame(mobilecapacity.poi.data,
                             geometry=gpd.points_from_xy(mobilecapacity.poi.data.lon, mobilecapacity.poi.data.lat),
                             crs=crs)
-    pois = pois.merge(poi_sufcapch_result[['sufcapch']], left_on='poi_id', right_index=True)
+    pois = pois.merge(poi_sufcapch_result[['poi_id', 'sufcapch']], on='poi_id', how='left')
 
     # Convert CRS to EPSG:4326 (Lat/Long) for folium
     for df in [cell_sites, pois]:
@@ -709,18 +709,9 @@ def plot_layers(mobilecapacity, poi_sufcapch_result, buffer_areas, output_file=N
 
     # Concatenate geometries, ensuring CRS is set
     all_geometries = pd.concat([cell_sites.geometry, pois.geometry])
-    if buffer_areas is not None:
-        for radius in range(mobilecapacity.min_radius, mobilecapacity.max_radius + 1, mobilecapacity.radius_step):
-            if f'clring_{radius}' in buffer_areas.columns:
-                # Ensure CRS is set for each buffer geometry
-                buffer_geom = buffer_areas[f'clring_{radius}']
-                if buffer_geom.crs is None:
-                    buffer_geom = buffer_geom.set_crs(crs)
-                all_geometries = pd.concat([all_geometries, buffer_geom])
-
-    minx, miny, maxx, maxy = all_geometries.total_bounds
 
     # Dynamically calculate zoom_start
+    minx, miny, maxx, maxy = all_geometries.total_bounds
     zoom_level = calculate_zoom_level(minx, miny, maxx, maxy)
 
     # Create the folium map with dynamic zoom_start
@@ -729,10 +720,9 @@ def plot_layers(mobilecapacity, poi_sufcapch_result, buffer_areas, output_file=N
     m = folium.Map(location=[center_lat, center_lon], zoom_start=zoom_level, tiles="cartodb positron")
 
     # Add buffer areas first
-    for radius in range(mobilecapacity.min_radius, mobilecapacity.max_radius + 1, mobilecapacity.radius_step):
-        if f'clring_{radius}' in buffer_areas.columns:
-            for idx, geom in buffer_areas[f'clring_{radius}'].items():
-                folium.GeoJson(geom, style_function=lambda x: {'color': 'blue', 'fillOpacity': 0.5}).add_to(m)
+    # Plot polygons from the geometry column of buffer_areas
+    for idx, geom in buffer_areas['geometry'].items():
+        folium.GeoJson(geom, style_function=lambda x: {'color': 'blue', 'fillOpacity': 0.5}).add_to(m)
 
     # Add cell towers as circle markers
     for idx, row in cell_sites.iterrows():

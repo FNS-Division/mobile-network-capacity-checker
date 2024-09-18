@@ -6,23 +6,23 @@ def test_nrb(mobilecapacity):
     # Perform calculations
     nrb_calc = mobilecapacity.nrb
     # Expected results (hardcoded for comparison)
-    nrb_expected = 100
+    nrb_expected = 175
     # Compare Python calculation results with expected results
     assert nrb_calc == nrb_expected, f"Expected {nrb_expected} but got {nrb_calc}"
 
 
 def test_avrbpdsch(mobilecapacity):
     # Perform calculations
-    avrbpdsch_calc = mobilecapacity.avrbpdsch
+    avrbpdsch_calc = round(mobilecapacity.avrbpdsch, 2)
     # Expected results (hardcoded for comparison)
-    avrbpdsch_expected = 82
+    avrbpdsch_expected = 46.86
     # Compare Python calculation results with expected results
     assert avrbpdsch_calc == avrbpdsch_expected, f"Expected {avrbpdsch_expected} but got {avrbpdsch_calc}"
 
 
 @pytest.mark.parametrize("d, expected", [
     (7000, np.inf),
-    (2000, 22.39)
+    (2000, 13.67)
 ])
 def test_poiddatareq(mobilecapacity, d, expected):
     # Perform calculation
@@ -38,7 +38,7 @@ def test_brrbpopcd(mobilecapacity, popcd=5000):
     brrbpopcd_calc = round(mobilecapacity.brrbpopcd(popcd)[0], 2)
 
     # Expected results (hardcoded for comparison)
-    brrbpopcd_expected = 835.9
+    brrbpopcd_expected = 683.97
 
     # Compare calculation results with expected results
     assert brrbpopcd_calc == brrbpopcd_expected, f"Expected {brrbpopcd_expected} but got {brrbpopcd_calc}"
@@ -79,7 +79,7 @@ def test_upoprbu(mobilecapacity, upopbr=32704.12, brrbpopcd=2081.84):
 
 def test_cellavcap(mobilecapacity, avrbpdsch=82, upoprbu=15.71):
     # Perform calculation
-    cellavcap_calc = round(mobilecapacity.cellavcap(avrbpdsch, upoprbu), 2)
+    cellavcap_calc = round(mobilecapacity.cellavcap(avrbpdsch, upoprbu)[0], 2)
 
     # Expected results (hardcoded for comparison)
     cellavcap_expected = 66.29

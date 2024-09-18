@@ -31,6 +31,7 @@ class VisibilityPair(Entity):
                  poi_id: str,
                  ground_distance: float,
                  order: int,
+                 is_visible: bool,
                  entity_type: str = 'Visibility Pair',
                  **kwargs):
         super().__init__(entity_type=entity_type, **kwargs)
@@ -38,6 +39,7 @@ class VisibilityPair(Entity):
         self.poi_id = poi_id
         self.ict_id = ict_id
         self.ground_distance = ground_distance
+        self.is_visible = is_visible
         self.order = order
 
     def __repr__(self):

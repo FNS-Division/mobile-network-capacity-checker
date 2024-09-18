@@ -213,4 +213,7 @@ class Visibility:
         # Check if line of sight is clear (all points above terrain)
         has_line_of_sight = np.all(los_profile > adjusted_e_profile)
 
-        return ground_distance, has_line_of_sight
+        if has_line_of_sight:
+            return ground_distance, has_line_of_sight
+        else:
+            return np.nan, False
