@@ -570,6 +570,7 @@ class Capacity:
         if self.visibility is None:
             # Match POIs to cell towers based on coverage area
             pois_within_cellsites = gpd.sjoin(pois_gdf, buffers_gdf, how='left', predicate='within')
+            pois_within_cellsites = pois_within_cellsites.drop_duplicates(subset='poi_id', keep='first')  # Drop duplicates in one step, but should not happen because of Voronoi cells
             pois_within_cellsites = pois_within_cellsites[["poi_id", "lat", "lon", "ict_id"]]
             # Assess whether the POI is visible from the cell site
             pois_within_cellsites["ground_distance"], pois_within_cellsites["is_visible"] = zip(*pois_within_cellsites.apply(_get_visibility_status, axis=1))
