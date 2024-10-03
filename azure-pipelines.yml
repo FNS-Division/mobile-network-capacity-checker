@@ -10,6 +10,13 @@ pool:
   vmImage: ubuntu-latest
 
 steps:
+- task: AzureKeyVault@2
+  inputs:
+    azureSubscription: 'z-sub-bdt-prod (de673dbd-52a6-45e9-af3b-09386dd7c4c9)'
+    KeyVaultName: 'z-akv-bdtvault-prod-euw'
+    SecretsFilter: '*'
+    RunAsPreJob: true
+    
 - script: |
     wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh
     bash miniconda.sh -b -p $HOME/miniconda
