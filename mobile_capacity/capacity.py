@@ -43,6 +43,7 @@ class Capacity:
         one_km_res (bool): Flag for using 1km resolution data.
         un_adjusted (bool): Flag for using UN-adjusted data.
         enable_logging (bool): Flag to enable logging.
+        use_secure_files (bool): Flag to use secure files for bandwidth data.
 
     Methods:
         _get_population_data(): Loads and returns population data.
@@ -69,6 +70,7 @@ class Capacity:
                  cellsites: CellSiteCollection,
                  bw_L850, bw_L1800, bw_L2600,
                  cco, max_radius, min_radius, radius_step, angles_num, rotation_angle, dlthtarg, nonbhu, mbb_subscr,
+                 use_secure_files: bool = False,
                  sectors_per_site: int = 3,
                  cellsite_search_radius: int = 35000,
                  poi_antenna_height: int = 15,
@@ -136,17 +138,23 @@ class Capacity:
             "https://zstagigaprodeuw1.blob.core.windows.net/gigainframapkit-public-container/mobile_capacity_data/active-mobile-broadband-subscriptions.csv")
         self.mbbtraffic = pd.read_csv(
             "https://zstagigaprodeuw1.blob.core.windows.net/gigainframapkit-public-container/mobile_capacity_data/mobile-broadband-internet-traffic-within-the-country.csv")
-
-        # Load the secure files
-        file_paths = {
-            'bwdistance_km': os.path.join(self.data_dir, 'input_data', 'carrier_bandwidth', 'bwdistance_km.csv'),
-            'bwdlachievbr_kbps': os.path.join(self.data_dir, 'input_data', 'carrier_bandwidth', 'bwdlachievbr_kbps.csv')
-        }
-        for key, path in file_paths.items():
-            if not os.path.exists(path):
-                raise ValueError(f"File {key} not found in {path}")
-        self.bwdistance_km = pd.read_csv(file_paths['bwdistance_km'])
-        self.bwdlachievbr = pd.read_csv(file_paths['bwdlachievbr_kbps'])
+        
+        # Load bwdistance_km and bwdlachievbr data
+        self.use_secure_files = use_secure_files
+        if self.use_secure_files:
+            # Load the secure files
+            file_paths = {
+                'bwdistance_km': os.path.join(self.data_dir, 'input_data', 'carrier_bandwidth', 'bwdistance_km.csv'),
+                'bwdlachievbr_kbps': os.path.join(self.data_dir, 'input_data', 'carrier_bandwidth', 'bwdlachievbr_kbps.csv')
+            }
+            for key, path in file_paths.items():
+                if not os.path.exists(path):
+                    raise ValueError(f"File {key} not found in {path}")
+            self.bwdistance_km = pd.read_csv(file_paths['bwdistance_km'])
+            self.bwdlachievbr = pd.read_csv(file_paths['bwdlachievbr_kbps'])
+        else:
+            self.bwdistance_km = pd.read_csv("https://zstagigaprodeuw1.blob.core.windows.net/gigainframapkit-public-container/mobile_capacity_data/carrier_bandwidth/_bwdistance_km_dummy.csv")
+            self.bwdlachievbr = pd.read_csv("https://zstagigaprodeuw1.blob.core.windows.net/gigainframapkit-public-container/mobile_capacity_data/carrier_bandwidth/_bwdlachievbr_kbps_dummy.csv") 
 
         # Set up the population data handler, and get population data
         self.population_data_handler = PopulationDataHandler(
@@ -667,7 +675,10 @@ class Capacity:
         for gdf in [buffers_gdf, rings_gdf, pois_within_cellsites]:
             gdf.to_crs("4326", inplace=True)
 
-        return rings_gdf, pois_within_cellsites
+        # Package rings and buffer geodata into a single dictionary
+        geodataframes = {"buffers": buffers_gdf, "rings": rings_gdf}
+
+        return geodataframes, pois_within_cellsites
 
     def mbbtps(self):
         """

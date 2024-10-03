@@ -631,7 +631,7 @@ def calculate_zoom_level(minx, miny, maxx, maxy):
         return 12  # Street view
 
 
-def plot_layers(mobilecapacity, poi_sufcapch_result, buffer_areas, output_file=None):
+def plot_layers(mobilecapacity, poi_sufcapch_result, buffer_areas, plot="buffers", output_file=None):
     """
     Create a folium map visualizing mobile network capacity, POIs, and cell towers.
 
@@ -646,6 +646,8 @@ def plot_layers(mobilecapacity, poi_sufcapch_result, buffer_areas, output_file=N
         A DataFrame containing the sufficiency of capacity for each POI.
     buffer_areas : geopandas.GeoDataFrame
         A GeoDataFrame containing buffer areas around POIs.
+    plot: str, optional
+        The type of plot to generate. Options are 'buffers' (default) or 'rings'.
     output_file : str, optional
         Path to save the output map as an HTML file. If None, the map object is returned.
 
@@ -681,7 +683,7 @@ def plot_layers(mobilecapacity, poi_sufcapch_result, buffer_areas, output_file=N
         <b>Capacity</b><br>
         <i class="fa fa-circle" style="color:green"></i> Sufficient Capacity<br>
         <i class="fa fa-circle" style="color:red"></i> Insufficient Capacity<br>
-        <i class="fa fa-circle" style="color:darkblue"></i> Cell Towers
+        <i class="fa-solid fa-tower-cell" style="color:darkblue"></i> Cell Towers
     </div>
     '''
 
@@ -702,10 +704,11 @@ def plot_layers(mobilecapacity, poi_sufcapch_result, buffer_areas, output_file=N
             df.to_crs(epsg=4326, inplace=True)
 
     # Ensure buffer_areas has a CRS set
-    if buffer_areas is not None and not buffer_areas.empty:
-        if buffer_areas.crs is None:
-            buffer_areas.set_crs(crs, inplace=True)
-        buffer_areas.to_crs(epsg=4326, inplace=True)
+    for _, value in buffer_areas.items():
+        if value is not None and not value.empty:
+            if value.crs is None:
+                value.set_crs(crs, inplace=True)
+            value.to_crs(epsg=4326, inplace=True)
 
     # Concatenate geometries, ensuring CRS is set
     all_geometries = pd.concat([cell_sites.geometry, pois.geometry])
@@ -720,19 +723,15 @@ def plot_layers(mobilecapacity, poi_sufcapch_result, buffer_areas, output_file=N
     m = folium.Map(location=[center_lat, center_lon], zoom_start=zoom_level, tiles="cartodb positron")
 
     # Add buffer areas first
-    # Plot polygons from the geometry column of buffer_areas
-    for idx, geom in buffer_areas['geometry'].items():
+    key = 'buffers' if plot == 'buffers' else 'rings'
+    for idx, geom in buffer_areas[key]['geometry'].items():
         folium.GeoJson(geom, style_function=lambda x: {'color': 'blue', 'fillOpacity': 0.5}).add_to(m)
 
-    # Add cell towers as circle markers
+    # Add cell towers using Font Awesome icons
     for idx, row in cell_sites.iterrows():
-        folium.CircleMarker(
+        folium.Marker(
             location=[row.geometry.y, row.geometry.x],
-            radius=8,  # Marker size
-            color='darkblue',  # Border color
-            fill=True,  # Fill the circle
-            fill_color='darkblue',  # Fill color
-            fill_opacity=0.7,  # Opacity of the fill
+            icon=folium.Icon(icon='tower-cell', color='darkblue', prefix='fa'),  # Change 'cloud' to a relevant icon
             popup=f"Cell Tower {row.ict_id}"
         ).add_to(m)
 
