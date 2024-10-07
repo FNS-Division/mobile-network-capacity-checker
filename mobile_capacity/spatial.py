@@ -724,8 +724,14 @@ def plot_layers(mobilecapacity, poi_sufcapch_result, buffer_areas, plot="buffers
 
     # Add buffer areas first
     key = 'buffers' if plot == 'buffers' else 'rings'
-    for idx, geom in buffer_areas[key]['geometry'].items():
-        folium.GeoJson(geom, style_function=lambda x: {'color': 'blue', 'fillOpacity': 0.5}).add_to(m)
+    for geom in buffer_areas[key]['geometry']:
+        folium.GeoJson(geom, style_function=lambda x: {
+            'color': 'blue',
+            'weight': 1,
+            'opacity': 0.2,
+            'fillColor': 'blue',
+            'fillOpacity': 0.3
+        }).add_to(m)
 
     # Add cell towers using Font Awesome icons
     for idx, row in cell_sites.iterrows():
@@ -741,11 +747,12 @@ def plot_layers(mobilecapacity, poi_sufcapch_result, buffer_areas, plot="buffers
         color = 'green' if row['sufcapch'] else 'red'
         folium.CircleMarker(
             location=[row.geometry.y, row.geometry.x],
-            radius=5,  # Adjust this value to make the markers smaller
-            color=color,  # Border color of the circle
+            radius=6,
+            color='white',
+            weight=2,
             fill=True,
-            fill_color=color,  # Fill color
-            fill_opacity=0.7,  # Transparency of the fill color
+            fill_color=color,
+            fill_opacity=1,
             popup=popup_text
         ).add_to(m)
 

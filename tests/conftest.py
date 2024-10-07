@@ -45,6 +45,7 @@ def init_variable_values():
         'logs_dir': os.path.join(os.path.dirname(__file__), 'logs'),
         'country_code': "ESP",
         'enable_logging': False,
+        'use_secure_files': True,
 
         # Network Configuration
         'bw_L850': 5,  # MHz on L700 to L900 spectrum bandwidth

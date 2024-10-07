@@ -2,17 +2,17 @@
 
 ![BSD-3 License](https://img.shields.io/pypi/l/prtg-pyprobe) [![Python](https://img.shields.io/badge/Python-3776AB.svg?style=flat&logo=Python&logoColor=white)](https://www.python.org/)
 
-# Mobile Network Capacity Model
+# Mobile Network Capacity Checker
 
 The Mobile Network Capacity Model is a geospatial tool designed to assess the adequacy of cellular network connectivity for critical locations such as hospitals, schools, and residential areas (collectively known as points of interest or POIs). This model evaluates whether the available bandwidth from cell towers is sufficient to meet the internet usage demands of these points of interest (POIs).
 
 ## Usage example
 
-You may find an [example](notebooks/analysis.ipynb) with test data on how to use this tool in the [notebooks](notebooks/) folder.
+There are [examples](notebooks/examples/) with test data on how to use this tool.
 
-The image below is an example of a mobile network coverage and capacity map created by our Mobile Network Capacity Model. It shows the locations of cell towers and their service areas, along with the points of interest that have or don't have sufficient mobile cellular service capacity.
+The image below is an example of a mobile network coverage and capacity map created by our Mobile Network Capacity Checker. It shows the locations of cell towers and their service areas, along with the points of interest that have or don't have sufficient mobile cellular service capacity.
 
-![Logo](https://i.ibb.co/hBbrdLy/cell-towers.png)
+<img src="https://i.postimg.cc/d3MHnLMz/STP-dummy-data.png" width="50%" height="50%">
 
 ## Technical documentation
 
@@ -22,34 +22,55 @@ See our [technical documentation](https://fns-division.github.io/mobile-network-
 
 ```sh
 mobile-network-capacity-model
-├── README.md
+├── CODE_OF_CONDUCT.md
+├── CONTRIBUTING.md
 ├── LICENSE.txt
+├── README.md
 ├── data
 │   ├── input_data
-│   │   ├── points_of_interest.csv
-│   │   ├── cell-sites.csv
-│   │   ├── visibility.csv
-│   │   ├── MobileBB_Traffic_per_Subscr_per_Month.csv
-│   │   ├── active-mobile-broadband-subscriptions.csv
-│   │   ├── area.gpkg
-│   │   ├── _bwdistance_km.csv
-│   │   ├── _bwdlachievbr_kbps.csv
-│   │   └── population.tif
-│   └── output_data
-│       ├── MobileBB_Traffic_per_Subscr_per_Month.csv
-│       └── network_capacity.csv
-├── documentation
+│   │   ├── ESP
+│   │   │   ├── points-of-interest.csv
+│   │   │   ├── cell-sites.csv
+│   │   │   ├── population
+│   │   │   │   └── ESP_ppp_2020_1km_Aggregated_UNadj.tif
+│   │   │   └── srtm1
+│   │   │       └── N00E006.SRTMGL1.hgt.zip
+│   └── carrier_bandwidth
+│       ├── bwdistance_km.csv
+│       └── bwdlachievbr_kbps.csv
+├── data_templates
+│   ├── cell_sites
+│   │   └── cell-sites.csv
+│   ├── point_of_interest
+│   │   └── points-of-interest.csv
+│   ├── visibility
+│   │   └── visibility.csv
+│   └── required-columns.csv
 ├── environment.yml
 ├── logs
+│   └── log-with-date.log
 ├── mobile_capacity
 │   ├── capacity.py
+│   ├── datastorage.py
+│   ├── entities
+│   │   ├── cellsite.py
+│   │   ├── entity.py
+│   │   ├── pointofinterest.py
+│   │   └── visibilitypair.py
+│   ├── handlers
+│   │   ├── populationdatahandler.py
+│   │   └── srtmdatahandler.py
 │   ├── rmalos.py
 │   ├── spatial.py
-│   └── utils.py
+│   ├── utils.py
+│   └── visibility.py
 ├── notebooks
-│   ├── analyses.ipynb
+│   └── examples
+│       ├── Ibiza.ipynb
+│       └── Sao-Tome-and-Principe.ipynb
 └── tests
     ├── conftest.py
+    ├── data
     └── unit
         └── test_class.py
 ```
@@ -100,11 +121,10 @@ conda activate mobilecapacityenv
 
 ## Preparing your data
 
-In order to conduct your analysis, you will need to provide the tool with the following geospatial data:
+In order to conduct your analysis, you will need to provide the tool with the following geospatial data in CSV format:
 
-- Points of interest
-- Cell sites
-- Cell site to point of interest visibility data
+- Points of interest locations
+- Cell site locations
 
 We have provided data templates in the [data templates](data_templates) folder, which specify the required columns for each dataset and the accepted values.
 
@@ -113,16 +133,19 @@ We have provided data templates in the [data templates](data_templates) folder, 
 To conduct your analysis using the Mobile Network Capacity Model, follow these steps:
 
 1. Prepare Your Data: 
-   Place your input data files in the `data/input_data` directory. Ensure your data is in the correct format as specified in the technical documentation.
+   Place your input data files in the `data/input_data/<country>` directory. For example, for Spain, include your geospatial data in CSV format in sub-folder `data/input_data/ESP`. Use [ISO-3 three-letter codes](https://en.wikipedia.org/wiki/ISO_3166-1_alpha-3) to identify your country. Ensure your data is in the correct format as specified in the technical documentation.
+
+2. Create a Jupyter Notebook to run your analysis:
+   Copy the notebook template from `notebooks/Template.ipynb`, and insert the copy in the folder `notebooks`. For example, `notebooks/my_analysis.ipynb`.
 
 2. Configure Analysis Parameters: 
-   Open the `notebooks/analyses.ipynb` notebook. Locate the configuration cell and adjust the parameters according to your specific analysis requirements.
+   In your analysis notebook (e.g. `notebooks/my_analysis.ipynb`) locate the configuration cells and adjust the parameters according to your specific analysis requirements.
 
 3. Execute the Analysis:
    Run through the notebook cells sequentially. Each cell contains explanations and code for different stages of the analysis.
 
 4. Review Results: 
-   After execution, find your output data and visualizations in the `data/output_data` directory. The notebook will also display key results and graphs inline.
+   After execution, find your output data and visualizations in the `data/output_data/<country>` directory. The notebook will also display key results and graphs inline.
 
 5. Iterate if Necessary: 
    Based on your initial results, you may want to adjust parameters or input data. Simply update the relevant sections and re-run the affected cells or the entire notebook.
@@ -136,28 +159,6 @@ Contributions are always welcome.
 See our [contributing page](CONTRIBUTING.md) for ways to contribute to the project.
 
 Please adhere to this project's [code of conduct](CODE_OF_CONDUCT.md).
-
-### Keeping analysis outputs private
-
-To ensure that all Jupyter Notebook outputs are cleared before committing changes to the repository, we use `nbstripout`. By following these instructions, contributors to your project will ensure that Jupyter Notebook outputs are cleared before committing changes, helping to keep the repository clean and free of unnecessary data. Follow the steps below to install and enable `nbstripout`.
-
-First, you'll need to install nbstripout. You can do this using `pip`:
-
-```bash
-pip install nbstripout
-```
-
-Once `nbstripout` is installed, you need to enable it for your Git repository. Run the following command in the root directory of your repository:
-
-```bash
-nbstripout --install
-```
-
-This will configure nbstripout to automatically strip output from Jupyter Notebooks when you commit them to your repository.
-
-```bash
-nbstripout --status
-```
 
 ## Support
 If you need help or have any questions, please contact [fns@itu.int](fns@itu.int).
