@@ -1,8 +1,10 @@
-![Logo](https://www.itu.int/web/pp-18/assets/logo/itu_logo.png)
-
-![BSD-3 License](https://img.shields.io/pypi/l/prtg-pyprobe) [![Python](https://img.shields.io/badge/Python-3776AB.svg?style=flat&logo=Python&logoColor=white)](https://www.python.org/)
-
 # Mobile Network Capacity Checker
+
+![Logo](https://www.itu.int/web/pp-18/assets/logo/itu_logo.png)
+![BSD-3 License](https://img.shields.io/pypi/l/prtg-pyprobe) 
+[![Python](https://img.shields.io/badge/Python-3776AB.svg?style=flat&logo=Python&logoColor=white)](https://www.python.org/)
+
+## Overview
 
 The Mobile Network Capacity Model is a geospatial tool designed to assess the adequacy of cellular network connectivity for critical locations such as hospitals, schools, and residential areas (collectively known as points of interest or POIs). This model evaluates whether the available bandwidth from cell towers is sufficient to meet the internet usage demands of these points of interest (POIs).
 
@@ -16,7 +18,7 @@ The image below is an example of a mobile network coverage and capacity map crea
 
 ## Technical documentation
 
-See our [technical documentation](https://fns-division.github.io/mobile-network-capacity-model-documentation/) for in-depth information on our mobile network capacity models, including instructions on how to use each function, as well as the relationships between each function.
+See our [technical documentation](https://fns-division.github.io/mobile-network-capacity-model-documentation/) for in-depth information on our mobile network capacity models, including instructions on how to use each function.
 
 ## Repository structure
 
@@ -27,18 +29,21 @@ mobile-network-capacity-model
 ├── LICENSE.txt
 ├── README.md
 ├── data
-│   ├── input_data
-│   │   ├── ESP
-│   │   │   ├── points-of-interest.csv
-│   │   │   ├── cell-sites.csv
-│   │   │   ├── population
-│   │   │   │   └── ESP_ppp_2020_1km_Aggregated_UNadj.tif
-│   │   │   └── srtm1
-│   │   │       └── N00E006.SRTMGL1.hgt.zip
+│   ├── input_data # Input data
+│   │   └── ESP # One sub-folder for each country
+│   │       ├── points-of-interest.csv
+│   │       ├── cell-sites.csv
+│   │       ├── population
+│   │       │   └── ESP_ppp_2020_1km_Aggregated_UNadj.tif
+│   │       └── srtm1
+│   │           └── N00E006.SRTMGL1.hgt.zip
+│   ├── output_data # Output data
+│   │   └── ESP # One sub-folder for each country
+│   │       └── poi-capacity-sufficiency.csv
 │   └── carrier_bandwidth
 │       ├── bwdistance_km.csv
 │       └── bwdlachievbr_kbps.csv
-├── data_templates
+├── data_templates # Templates to provide data in the right format
 │   ├── cell_sites
 │   │   └── cell-sites.csv
 │   ├── point_of_interest
@@ -49,7 +54,7 @@ mobile-network-capacity-model
 ├── environment.yml
 ├── logs
 │   └── log-with-date.log
-├── mobile_capacity
+├── mobile_capacity # Toolkit modules
 │   ├── capacity.py
 │   ├── datastorage.py
 │   ├── entities
@@ -64,11 +69,12 @@ mobile-network-capacity-model
 │   ├── spatial.py
 │   ├── utils.py
 │   └── visibility.py
-├── notebooks
+├── notebooks # Analysis notebooks: template and examples
+│   ├── template.ipynb
 │   └── examples
-│       ├── Ibiza.ipynb
-│       └── Sao-Tome-and-Principe.ipynb
-└── tests
+│      ├── Ibiza.ipynb
+│      └── Sao-Tome-and-Principe.ipynb
+└── tests # Testing files
     ├── conftest.py
     ├── data
     └── unit
@@ -138,10 +144,10 @@ To conduct your analysis using the Mobile Network Capacity Model, follow these s
    Place your input data files in the `data/input_data/<country-code>` directory. For example, for Spain, include your geospatial data in CSV format in sub-folder `data/input_data/ESP`. Use [ISO-3 three-letter codes](https://en.wikipedia.org/wiki/ISO_3166-1_alpha-3) to identify your country. Ensure your data is in the correct format as specified in the technical documentation.
 
 2. **Create a Jupyter Notebook to run your analysis**:
-   Copy the notebook template from `notebooks/Template.ipynb`, and insert the copy in the folder `notebooks`. For example, `notebooks/my_analysis.ipynb`.
+   Copy the notebook template from `notebooks/template.ipynb`, and insert the copy in the folder `notebooks`. For example, `notebooks/my_analysis.ipynb`.
 
 3. **Configure Analysis Parameters**: 
-   In your analysis notebook (e.g. `notebooks/my_analysis.ipynb`) locate the configuration cells and adjust the parameters according to your specific analysis requirements.
+   In your analysis notebook (for example, `notebooks/my_analysis.ipynb`) locate the configuration cells and adjust the parameters according to your specific analysis requirements.
 
 4. **Execute the Analysis**:
    Run through the notebook cells sequentially. Each cell contains explanations and code for different stages of the analysis. During the analysis run, auxiliary files related to topography (Source: [NASA](https://portal.opentopography.org/raster?opentopoID=OTSRTM.082015.4326.1)) and population (Source: [Worldpop](https://www.worldpop.org/)) in the area covered by the points of interest and cell sites will automatically be downloaded into the `data/input_data/<country-code>` folder (in sub-folders called `srtm1` and `population`). You do not need to directly manipulate these files.
