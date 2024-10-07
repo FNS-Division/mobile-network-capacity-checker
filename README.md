@@ -128,26 +128,28 @@ In order to conduct your analysis, you will need to provide the tool with the fo
 
 We have provided data templates in the [data templates](data_templates) folder, which specify the required columns for each dataset and the accepted values.
 
+It is also possible to provide data on the visibility status between each point of interest and cell site, but this is not a requirement as the checker automates these calculations in the background.
+
 ## Running your analysis
 
 To conduct your analysis using the Mobile Network Capacity Model, follow these steps:
 
 1. Prepare Your Data: 
-   Place your input data files in the `data/input_data/<country>` directory. For example, for Spain, include your geospatial data in CSV format in sub-folder `data/input_data/ESP`. Use [ISO-3 three-letter codes](https://en.wikipedia.org/wiki/ISO_3166-1_alpha-3) to identify your country. Ensure your data is in the correct format as specified in the technical documentation.
+   Place your input data files in the `data/input_data/<country-code>` directory. For example, for Spain, include your geospatial data in CSV format in sub-folder `data/input_data/ESP`. Use [ISO-3 three-letter codes](https://en.wikipedia.org/wiki/ISO_3166-1_alpha-3) to identify your country. Ensure your data is in the correct format as specified in the technical documentation.
 
 2. Create a Jupyter Notebook to run your analysis:
    Copy the notebook template from `notebooks/Template.ipynb`, and insert the copy in the folder `notebooks`. For example, `notebooks/my_analysis.ipynb`.
 
-2. Configure Analysis Parameters: 
+3. Configure Analysis Parameters: 
    In your analysis notebook (e.g. `notebooks/my_analysis.ipynb`) locate the configuration cells and adjust the parameters according to your specific analysis requirements.
 
-3. Execute the Analysis:
-   Run through the notebook cells sequentially. Each cell contains explanations and code for different stages of the analysis.
+4. Execute the Analysis:
+   Run through the notebook cells sequentially. Each cell contains explanations and code for different stages of the analysis. During the analysis run, auxiliary files related to topography (Source: [NASA](https://portal.opentopography.org/raster?opentopoID=OTSRTM.082015.4326.1)) and population (Source: [Worldpop](https://www.worldpop.org/)) in the area covered by the points of interest and cell sites will automatically be downloaded into the `data/input_data/<country-code>` folder (in sub-folders called `srtm1` and `population`). You do not need to directly manipulate these files.
 
-4. Review Results: 
-   After execution, find your output data and visualizations in the `data/output_data/<country>` directory. The notebook will also display key results and graphs inline.
+5. Review Results: 
+   After execution, find your output data and visualizations in the `data/output_data/<country-code>` directory. The notebook will also display key results and graphs inline.
 
-5. Iterate if Necessary: 
+6. Iterate if Necessary: 
    Based on your initial results, you may want to adjust parameters or input data. Simply update the relevant sections and re-run the affected cells or the entire notebook.
 
 For a more detailed walkthrough, refer to our [technical documentation](https://fns-division.github.io/mobile-network-capacity-model-documentation/).
@@ -161,7 +163,12 @@ See our [contributing page](CONTRIBUTING.md) for ways to contribute to the proje
 Please adhere to this project's [code of conduct](CODE_OF_CONDUCT.md).
 
 ## Support
+
 If you need help or have any questions, please contact [fns@itu.int](fns@itu.int).
+
+## Acknowledgements
+
+We would like to thank our partners at Ericsson for helping us develop this tool.
 
 ## License
 
