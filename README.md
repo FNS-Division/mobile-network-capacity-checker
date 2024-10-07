@@ -37,12 +37,9 @@ mobile-network-capacity-model
 │   │       │   └── ESP_ppp_2020_1km_Aggregated_UNadj.tif
 │   │       └── srtm1
 │   │           └── N00E006.SRTMGL1.hgt.zip
-│   ├── output_data # Output data
-│   │   └── ESP # One sub-folder for each country
-│   │       └── poi-capacity-sufficiency.csv
-│   └── carrier_bandwidth
-│       ├── bwdistance_km.csv
-│       └── bwdlachievbr_kbps.csv
+│   └── output_data # Output data
+│       └── ESP # One sub-folder for each country
+│           └── poi-capacity-sufficiency.csv
 ├── data_templates # Templates to provide data in the right format
 │   ├── cell_sites
 │   │   └── cell-sites.csv
