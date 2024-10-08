@@ -398,18 +398,23 @@ class Capacity:
 
     def upopbr(self, avubrnonbh, pop):
         """
-        User Population Bitrate per sector, kbps
+        Calculate User Population Bitrate per sector in kbps.
+
+        This method computes the total bitrate required for a given population
+        in a cell sector during non-busy hours, considering mobile broadband
+        subscription rates and the operator's market share.
 
         Parameters:
         - avubrnonbh (float): Average user bitrate in non-busy hour in kbps.
-        - upop (int): User population number, people.
-        - oppopshare (int): Percentage of population using operator services in %.
-        - sectors_per_site (int): No. of Frequency Bands on Site
+        - pop (int): Total population in the area served by the cell sector.
 
         Returns:
-        - upopbr (float): User Population Bitrate in kbps.
+        - float: User Population Bitrate in kbps.
 
         Note:
+        This calculation uses class attributes mbb_subscr (mobile broadband
+        subscription rate), oppopshare (operator's market share), and
+        sectors_per_site (number of sectors per cell site).
         """
         upopbr = avubrnonbh * pop * (self.mbb_subscr / 100) * (self.oppopshare / 100) / self.sectors_per_site
         self._log("debug", f'upopbr = {upopbr}')
@@ -528,8 +533,6 @@ class Capacity:
         - `upoprbu`: User population resource block utilization based on the user population bitrate `upopbr` and the bitrate per resource block `brrpopcd`.
         - `cellavcap`: Available cell capacity based on `avrbpdsch` and `upoprbu`.
         - `capcheck`: Capacity sufficiency check based on `cellavcap` and the target data rate `rbdlthtarg`.
-
-        The capacity check result is stored in `self.capcheck_result`.
         """
 
         # Independent functions
@@ -549,14 +552,46 @@ class Capacity:
 
     def calculate_buffer_areas(self):
         """
-        Calculates buffer areas around cell sites adjusted with Voronoi polygons
-        representing cell sites service areas. Breaks down buffer areas into rings of a specified radius to segment
-        demand estimates by distance.
+        Calculate buffer areas around cell sites and perform spatial analysis for network capacity assessment.
+
+        This method performs the following key operations:
+        1. Creates buffer areas and rings around cell sites using Voronoi polygons.
+        2. Conducts visibility analysis between Points of Interest (POIs) and cell sites.
+        3. Performs capacity calculations at POI, ring, and cell site levels.
+
+        The method uses several geospatial operations:
+        - Converts input data to GeoDataFrames
+        - Projects data to an appropriate UTM CRS for accurate distance calculations
+        - Creates Voronoi polygons to represent cell site service areas
+        - Generates buffer areas and rings around cell sites
+        - Performs spatial joins to associate POIs with cell sites and population data with rings
+
+        Capacity calculations include:
+        - Resource block requirements for download throughput targets
+        - Bitrate per resource block at different distances
+        - User population bitrate and resource block utilization
+        - Available cell capacity and sufficiency checks
 
         Returns:
-        - buffer_cellsites (geodataframe): Cellsites data containing buffer areas around cell site locations.
+        tuple: A tuple containing two elements:
+            - geodataframes (dict): A dictionary with two GeoDataFrames:
+                - 'buffers': Buffer areas around cell sites
+                - 'rings': Ring areas around cell sites
+            - pois_within_cellsites (GeoDataFrame): POIs within cell site coverage areas,
+            including capacity analysis results
 
         Note:
+        - This method relies on several class attributes and methods for calculations.
+        - The visibility analysis is performed only if pre-computed visibility data is not provided.
+        - All output GeoDataFrames are reprojected to WGS84 (EPSG:4326) before being returned.
+
+        Important class attributes used:
+        - self.cellsites: Cell site data
+        - self.poi: Points of Interest data
+        - self.population_data: Population distribution data
+        - self.visibility: Pre-computed visibility data (if available)
+        - self.min_radius, self.max_radius, self.radius_step: Buffer configuration
+        - self.area: Study area boundary
         """
         def _get_visibility_status(row):
             log_progress_bar(self.logger, row.name + 1, len(pois_within_cellsites), prefix='Visibility Analysis:', length=50)
@@ -564,6 +599,8 @@ class Capacity:
                 return np.nan, np.nan
             else:
                 return self.visibility_analyzer.perform_pair_analysis(row["poi_id"], row["ict_id"])
+
+        ### GEODATA PREPARATION ###
 
         # Copy input data
         cellsites = self.cellsites.data.copy()
@@ -585,6 +622,8 @@ class Capacity:
         poi_utm = pois_gdf.estimate_utm_crs()
         for gdf in [pois_gdf, population_gdf, cellsites_gdf]:
             gdf.to_crs(poi_utm, inplace=True)
+
+        ### CREATE BUFFERS AND RINGS AROUND EACH CELL SITE ###
 
         # Create Voronoi polygons for the cell sites
         cellsites_gdf = create_voronoi_cells(cellsites_gdf, self.area)
@@ -620,6 +659,8 @@ class Capacity:
         rings_gdf['buffer'] = rings_gdf['buffer_column'].str.extract(r'(\d+)').astype(int)
         rings_gdf = gpd.GeoDataFrame(rings_gdf.drop('buffer_column', axis=1), geometry='geometry', crs=poi_utm)
         rings_gdf['radius'] = rings_gdf['buffer'] - self.radius_step / 2
+
+        ### VISIBILITY ANALYSIS ###
 
         # If visibility analysis is not provided
         if self.visibility is None:
@@ -667,7 +708,9 @@ class Capacity:
         pois_within_cellsites["sufcapch"] = self.sufcapch(pois_within_cellsites["cellavcap"], pois_within_cellsites["rbdlthtarg"])
         pois_within_cellsites = pois_within_cellsites[["poi_id", "lat", "lon", "ict_id", "ground_distance", "is_visible", "rbdlthtarg", "upoprbu", "cellavcap", "sufcapch"]]
 
-        # Export as GeoDataFrames in WGS84
+        ### PREPARE OUTPUT ###
+       
+       # Export as GeoDataFrames in WGS84
         pois_within_cellsites = gpd.GeoDataFrame(
             pois_within_cellsites,
             geometry=gpd.points_from_xy(pois_within_cellsites["lon"], pois_within_cellsites["lat"]),
