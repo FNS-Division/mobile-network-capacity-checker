@@ -14,9 +14,7 @@ There are [examples](notebooks/examples/) with test data on how to use this tool
 
 The image below is an example of a mobile network coverage and capacity map created by our Mobile Network Capacity Checker. It shows the locations of cell towers and their service areas, along with the points of interest that have or don't have sufficient mobile cellular service capacity.
 
-<!-- ![Example](https://i.postimg.cc/d3MHnLMz/STP-dummy-data.png) -->
-
-<iframe src="/home/azureuser/cloudfiles/code/Users/sebastien.peytrignet/mobile-network-capacity-model/data/output_data/STP/poi-capacity-sufficiency.html" width="100%" height="100%"></iframe>
+![Example](https://i.postimg.cc/d3MHnLMz/STP-dummy-data.png)
 
 ## Technical documentation
 
