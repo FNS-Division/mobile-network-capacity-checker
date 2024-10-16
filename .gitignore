@@ -5,6 +5,9 @@ documentation/
 data/auxiliary_data/
 data/output_data/
 
+# OSM API cache
+notebooks/cache/
+
 # Input data
 data/input_data/carrier_bandwidth/*.enc
 data/input_data/frequency/*.enc
@@ -46,3 +49,7 @@ logs/
 # Azure ML specific
 *.amltmp
 *.amlignore
+.azuredevops
+
+# Shell scripts
+*.sh

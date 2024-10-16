@@ -16,13 +16,13 @@ dependencies:
   - folium
   - shapely
   - pytest
-  - streamlit
   - nbstripout
+  - osmnx
   - nbconvert
   - contextily=1.6.2
   - flake8-junit-report=2.1.0
   - python-dotenv==1.0.1
   - pytest-cov=4.1.0
   - pip:
+    - pycountry==24.6.1
     - python-srtm==0.5.0
-    - cryptography==43.0.1
