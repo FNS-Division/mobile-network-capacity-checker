@@ -16,6 +16,10 @@ The image below is an example of a mobile network coverage and capacity map crea
 
 ![Example](https://i.postimg.cc/d3MHnLMz/STP-dummy-data.png)
 
+## Sourcing open data
+
+We have provide an [example](notebooks/get_open_data.ipynb) to follow along of how to source open data on amenities and cell sites.
+
 ## Technical documentation
 
 See our [technical documentation](https://fns-division.github.io/mobile-network-capacity-model-documentation/) for in-depth information on our mobile network capacity models, including instructions on how to use each function.
@@ -68,6 +72,7 @@ mobile-network-capacity-model
 │   └── visibility.py
 ├── notebooks # Analysis notebooks: template and examples
 │   ├── template.ipynb
+│   ├── get_open_data.ipynb
 │   └── examples
 │      ├── Ibiza.ipynb
 │      └── Sao-Tome-and-Principe.ipynb
@@ -139,6 +144,8 @@ To conduct your analysis using the Mobile Network Capacity Model, follow these s
 
 1. **Prepare Your Data**: 
    Place your input data files in the `data/input_data/<country-code>` directory. For example, for Spain, include your geospatial data in CSV format in sub-folder `data/input_data/ESP`. Use [ISO-3 three-letter codes](https://en.wikipedia.org/wiki/ISO_3166-1_alpha-3) to identify your country. Ensure your data is in the correct format as specified in the technical documentation.
+   
+   If you do not have data on points of interest or cell sites, you may obtain data from open sources by following the [example notebook](notebooks/get_open_data.ipynb).
 
 2. **Create a Jupyter Notebook to run your analysis**:
    Copy the notebook template from `notebooks/template.ipynb`, and insert the copy in the folder `notebooks`. For example, `notebooks/my_analysis.ipynb`.
