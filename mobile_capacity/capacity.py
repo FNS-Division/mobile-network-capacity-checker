@@ -1,61 +1,119 @@
-from mobile_capacity.spatial import *
-from mobile_capacity.utils import initialize_logger
+from mobile_capacity.spatial import meters_to_degrees_latitude, create_voronoi_cells
+from mobile_capacity.utils import initialize_logger, log_progress_bar
 from mobile_capacity.handlers.populationdatahandler import PopulationDataHandler
+from mobile_capacity.handlers.srtmdatahandler import SRTMDataHandler
 from mobile_capacity.entities.pointofinterest import PointOfInterestCollection
 from mobile_capacity.entities.cellsite import CellSiteCollection
 from mobile_capacity.entities.visibilitypair import VisibilityPairCollection
+from mobile_capacity.visibility import Visibility
 import numpy as np
 import pandas as pd
 import geopandas as gpd
 import os
 
-
 class Capacity:
+    """
+    A class for analyzing and calculating mobile network capacity in a given area.
+
+    This class provides methods to analyze cell site coverage, population distribution,
+    and network capacity based on various parameters such as bandwidth, spectrum allocation,
+    and user data consumption.
+
+    Attributes:
+        country_code (str): ISO3 country code for the area of analysis.
+        bw_L850 (float): Bandwidth in MHz for L700 to L900 spectrum.
+        bw_L1800 (float): Bandwidth in MHz for L1800 to L2100 spectrum.
+        bw_L2600 (float): Bandwidth in MHz for L2300 to L2600 spectrum.
+        cco (float): Control channel overhead in percentage.
+        sectors_per_site (int): Number of sectors per cell site.
+        angles_num (int): Number of angles for analysis.
+        rotation_angle (float): Rotation angle in degrees.
+        dlthtarg (float): Download throughput target in Mbps.
+        mbb_subscr (float): Active mobile-broadband subscriptions per 100 people.
+        oppopshare (float): Percentage of population using operator services.
+        nonbhu (float): Connection usage in non-busy hour in percentage.
+        nbhours (int): Number of non-busy hours per day.
+        rb_num_multiplier (int): Resource block number multiplier.
+        max_radius (int): Maximum buffer radius for analysis.
+        min_radius (int): Minimum buffer radius for analysis.
+        radius_step (int): Step size for buffer radius increments.
+        cellsite_search_radius (int): Cell site search radius in meters.
+        poi_antenna_height (int): Point of interest antenna height in meters.
+        dataset_year (int): Year of the dataset being used.
+        one_km_res (bool): Flag for using 1km resolution data.
+        un_adjusted (bool): Flag for using UN-adjusted data.
+        enable_logging (bool): Flag to enable logging.
+        use_secure_files (bool): Flag to use secure files for bandwidth data.
+
+    Methods:
+        _get_population_data(): Loads and returns population data.
+        get_dl_bitrate(poi_distances): Calculates downlink bitrate based on distances.
+        poiddatareq(d): Calculates required resource blocks for target throughput.
+        brrbpopcd(popcd): Calculates bitrate per resource block at population center.
+        avubrnonbh(udatavmonth): Calculates average user bitrate in non-busy hour.
+        upopbr(avubrnonbh, pop): Calculates user population bitrate.
+        upoprbu(upopbr, brrbpopcd): Calculates user population resource block utilization.
+        cellavcap(avrbpdsch, upoprbu): Calculates available cell capacity.
+        sufcapch(cellavcap, rbdlthtarg): Checks if capacity is sufficient.
+        capacity_checker(d, popcd, udatavmonth, pop): Performs overall capacity check.
+        calculate_buffer_areas(): Calculates buffer areas around cell sites.
+        mbbtps(): Calculates mobile broadband traffic per subscription.
+
+    The class uses various data sources including population data, cell site locations,
+    and terrain information to perform comprehensive network capacity analysis.
+    """
     def __init__(self,
                  country_code: str,
                  data_dir: str,
                  logs_dir: str,
                  poi: PointOfInterestCollection,
                  cellsites: CellSiteCollection,
-                 visibility: VisibilityPairCollection,
-                 bw, cco, fb_per_site, max_radius, min_radius, radius_step, angles_num, rotation_angle, dlthtarg, nonbhu, mbb_subscr,
+                 bw_L850, bw_L1800, bw_L2600,
+                 cco, max_radius, min_radius, radius_step, angles_num, rotation_angle, dlthtarg, nonbhu, mbb_subscr,
+                 use_secure_files: bool = False,
+                 sectors_per_site: int = 3,
+                 cellsite_search_radius: int = 35000,
+                 poi_antenna_height: int = 15,
                  rb_num_multiplier: int = 5,
+                 visibility: VisibilityPairCollection = None,
                  area: gpd.GeoDataFrame = None,
                  dataset_year: int = 2020,
                  one_km_res: bool = True,
                  un_adjusted: bool = True,
                  nbhours: int = 10,
                  oppopshare: int = 50,
-                 enable_logging: bool = False,
-                 use_confidential_data: bool = False):
-
-        # Input validation
-        self._validate_input(bw)
+                 enable_logging: bool = False):
 
         # Parameters
         self.country_code = country_code  # Country ISO3 code
-        self.bw = bw  # Bandwidth in MHz
+        self.bw_L850 = bw_L850  # MHz on L700 to L900 spectrum bandwidth
+        self.bw_L1800 = bw_L1800  # MHz on L1800 to L2100 spectrum bandwidth
+        self.bw_L2600 = bw_L2600  # MHz on L2300 to L2600 spectrum bandwidth
         self.cco = cco  # Control channel overhead in %
-        self.fb_per_site = fb_per_site  # Number of frequency bands per site
-        self.angles_num = angles_num  # Number of angles PLACEHOLDER
-        self.rotation_angle = rotation_angle  # Rotation angle in degrees PLACEHOLDER
+        self.sectors_per_site = sectors_per_site  # Number of sectors per site
+        self.angles_num = angles_num  # Number of angles
+        self.rotation_angle = rotation_angle  # Rotation angle in degrees
         self.dlthtarg = dlthtarg  # Download throughput target in Mbps
         self.mbb_subscr = mbb_subscr  # Active mobile-broadband subscriptions per 100 people
         self.oppopshare = oppopshare  # Percentage of population using operator services in %
         self.nonbhu = nonbhu  # Connection usage in non-busy hour in %
-        self.nbhours = nbhours  # number of non-busy hours per day
+        self.nbhours = nbhours  # Number of non-busy hours per day
         self.rb_num_multiplier = rb_num_multiplier  # Resource block number multiplier
-        self.max_radius = max_radius  # maximum buffer radius
-        self.min_radius = min_radius  # maximum buffer radius
-        self.radius_step = radius_step  # maximum buffer radius
+        self.max_radius = max_radius  # Maximum buffer radius
+        self.min_radius = min_radius  # Maximum buffer radius
+        self.radius_step = radius_step  # Maximum buffer radius
+
+        # Visibility analysis parameters
+        self.cellsite_search_radius = cellsite_search_radius  # Cell site search radius in meters
+        self.poi_antenna_height = poi_antenna_height  # Point of interest antenna height in meters
 
         # Constants
         self.days = 30.4  # Days in one month
-        self.minperhour = 60  # number of minutes per hour
-        self.secpermin = 60  # number of seconds per minute
-        self.bitsingbit = 1000000000  # bits in one gigabit
-        self.bitsinkbit = 1000  # bits in kilobit
-        self.bitsingbyte = 8589934592  # bits in one gigabyte
+        self.minperhour = 60  # Number of minutes per hour
+        self.secpermin = 60  # Number of seconds per minute
+        self.bitsingbit = 1000000000  # Bits in one gigabit
+        self.bitsinkbit = 1000  # Bits in kilobit
+        self.bitsingbyte = 8589934592  # Bits in one gigabyte
 
         # Population data handler variables
         self.dataset_year = dataset_year
@@ -70,34 +128,70 @@ class Capacity:
         if self.enable_logging:
             self.logger = initialize_logger(self.logs_dir)
 
-        # Set up the population data handler, and get population data
-        self.population_data_handler = PopulationDataHandler(
-            data_dir=os.path.join(self.data_dir, 'input_data', 'population'),
-            country_code=self.country_code,
-            dataset_year=self.dataset_year,
-            one_km_res=self.one_km_res,
-            un_adjusted=self.un_adjusted,
-            logger=self.logger,
-            enable_logging=self.enable_logging)
-        self.population_data = self._get_population_data()
-
         # Assign loaded data to class attributes
-        self.poi = poi.data
-        self.cellsites = cellsites.data
-        self.visibility = visibility.data
+        self.poi = poi
+        self.cellsites = cellsites
+        self.visibility = visibility
         self.area = area
         self.mbbt = pd.read_csv("https://zstagigaprodeuw1.blob.core.windows.net/gigainframapkit-public-container/mobile_capacity_data/MobileBB_Traffic_per_Subscr_per_Month.csv")
         self.mbbsubscr = pd.read_csv(
             "https://zstagigaprodeuw1.blob.core.windows.net/gigainframapkit-public-container/mobile_capacity_data/active-mobile-broadband-subscriptions.csv")
         self.mbbtraffic = pd.read_csv(
             "https://zstagigaprodeuw1.blob.core.windows.net/gigainframapkit-public-container/mobile_capacity_data/mobile-broadband-internet-traffic-within-the-country.csv")
-
-        if use_confidential_data:
-            self.bwdistance_km = pd.read_csv(os.path.join(self.data_dir, 'input_data', 'bwdistance_km.csv'))
-            self.bwdlachievbr = pd.read_csv(os.path.join(self.data_dir, 'input_data', 'bwdlachievbr_kbps.csv'))
+        
+        # Load bwdistance_km and bwdlachievbr data
+        self.use_secure_files = use_secure_files
+        if self.use_secure_files:
+            # Load the secure files
+            file_paths = {
+                'bwdistance_km': os.path.join(self.data_dir, 'input_data', 'carrier_bandwidth', 'bwdistance_km.csv'),
+                'bwdlachievbr_kbps': os.path.join(self.data_dir, 'input_data', 'carrier_bandwidth', 'bwdlachievbr_kbps.csv')
+            }
+            for key, path in file_paths.items():
+                if not os.path.exists(path):
+                    raise ValueError(f"File {key} not found in {path}")
+            self.bwdistance_km = pd.read_csv(file_paths['bwdistance_km'])
+            self.bwdlachievbr = pd.read_csv(file_paths['bwdlachievbr_kbps'])
         else:
-            self.bwdistance_km = pd.read_csv("https://zstagigaprodeuw1.blob.core.windows.net/gigainframapkit-public-container/mobile_capacity_data/_bwdistance_km.csv")
-            self.bwdlachievbr = pd.read_csv("https://zstagigaprodeuw1.blob.core.windows.net/gigainframapkit-public-container/mobile_capacity_data/_bwdlachievbr_kbps.csv")
+            self.bwdistance_km = pd.read_csv("https://zstagigaprodeuw1.blob.core.windows.net/gigainframapkit-public-container/mobile_capacity_data/carrier_bandwidth/bwdistance_km.csv")
+            self.bwdlachievbr = pd.read_csv("https://zstagigaprodeuw1.blob.core.windows.net/gigainframapkit-public-container/mobile_capacity_data/carrier_bandwidth/bwdlachievbr_kbps.csv") 
+
+        # Set up the population data handler, and get population data
+        self.population_data_handler = PopulationDataHandler(
+            data_dir=os.path.join(self.data_dir, 'input_data', self.country_code, 'population'),
+            country_code=self.country_code,
+            dataset_year=self.dataset_year,
+            one_km_res=self.one_km_res,
+            un_adjusted=self.un_adjusted,
+            logger=self.logger,
+            enable_logging=self.enable_logging,
+            logs_dir=self.logs_dir)
+        self.population_data = self._get_population_data()
+
+        # Set up the SRTM daa handler if required
+        self.srtm_data_handler = None
+        if visibility is None:
+            self._log("info", "Setting up SRTM data handler...")
+            self.srtm_data_handler = SRTMDataHandler(srtm_directory=os.path.join(self.data_dir, 'input_data', self.country_code, 'srtm1'),
+                                                     enable_logging=self.enable_logging, logger=self.logger, logs_dir=self.logs_dir)
+            self.srtm_data_handler.check_directory()  # Check if the SRTM directory exists, creates it if not
+
+        # Set up the Visibility analysis if required
+        if visibility is None:
+            self._log("info", "Setting up visibility analysis...")
+            self.visibility_analyzer = Visibility(
+                points_of_interest=self.poi,
+                cell_sites=self.cellsites,
+                srtm_data_handler=self.srtm_data_handler,
+                poi_antenna_height=self.poi_antenna_height,
+                allowed_radio_types=['unknown', '2G', '3G', '4G', '5G'],
+                earth_radius=6371,
+                use_srtm=True,
+                refraction_coef=0,
+                logger=self.logger,
+                logs_dir=self.logs_dir,
+                enable_logging=self.enable_logging
+            )
 
     def _get_population_data(self):
         """
@@ -109,16 +203,24 @@ class Capacity:
                                    crs="EPSG:4326")
         return pop_gdf
 
-    def _validate_input(self, bw):
-        """Validates the bandwidth (bw) parameter."""
-        valid_bw_values = {5, 10, 15, 20}
-        if bw not in valid_bw_values:
-            raise ValueError(f"Invalid bandwidth (bw) value: {bw}. Must be one of {valid_bw_values}.")
+    def _log(self, level, message):
+        """Conditionally log messages based on enable_logging flag."""
+        if self.enable_logging and self.logger:
+            if level == 'info':
+                self.logger.info(message)
+            elif level == 'warn':
+                self.logger.warn(message)
+            elif level == 'error':
+                self.logger.error(message)
+            elif level == 'debug':
+                self.logger.debug(message)
 
-    def _log_info(self, message):
-        """Logs an info message."""
-        if self.logger:
-            self.logger.info(message)
+    @property
+    def bw(self):
+        """
+        Returns the total bandwidth in MHz.
+        """
+        return self.bw_L850 + self.bw_L1800 + self.bw_L2600
 
     @property
     def udatavmonth_pu(self):
@@ -155,71 +257,81 @@ class Capacity:
         Calculate the downlink bitrate based on the given POI distances.
 
         Parameters:
-        - poi_distances (list): List of POI distances in meters, can contain a single or multiple distances.
+        - poi_distances (list, numpy array, or pandas Series): POI distances in meters.
 
         Returns:
         - np.ndarray: Array of downlink bitrates corresponding to each POI distance.
 
         Note:
         - `bwdistance_k` and `bwdlachievbr` are expected to be pandas DataFrames with columns
-          named as `{bandwidth}MHz`.
+        named as `{bandwidth}MHz`.
         """
-        if not isinstance(poi_distances, list):
-            poi_distances = [poi_distances]
-
         # Convert input distances to numpy array
-        poi_distances = np.array(poi_distances) / 1000  # converts distances in meters to kilometers
+        poi_distances = np.array(poi_distances, dtype=float).flatten() / 1000  # converts distances in meters to kilometers
 
-        # Retrieve distance and bitrate arrays for the given bandwidth
-        distances_array = self.bwdistance_km[[f'{self.bw}MHz']].values.flatten()
-        bitrate_array = self.bwdlachievbr[[f'{self.bw}MHz']].values.flatten()
+        # Create weights
+        weights = np.array([self.bw_L850 / self.bw, self.bw_L1800 / self.bw, self.bw_L2600 / self.bw])
 
-        # Create a mask to find the first distance in distances_array larger than or equal to each POI-tower distance
-        mask = (distances_array[np.newaxis, :] >= poi_distances[:, np.newaxis])
-        indices = mask.argmax(axis=1)
+        # Array to populate
+        dl_bitrates = np.full((len(poi_distances), 3), np.nan)
 
-        # Identify POI distances that do not have a corresponding larger/equal distance in distances_array
-        no_larger_equal = ~mask.any(axis=1)
+        for i, bw in enumerate(["L850", "L1800", "L2600"]):
+            # Retrieve distance and bitrate arrays for the given bandwidth
+            distances_array = self.bwdistance_km[bw].values.flatten()
+            bitrate_array = self.bwdlachievbr[bw].values.flatten()
 
-        # Fetch the corresponding bitrate values and handle out-of-bound values
-        dl_bitrate = bitrate_array[indices]
-        dl_bitrate[no_larger_equal] = np.nan
+            # Create a mask to find the first distance in distances_array larger than or equal to each POI-tower distance
+            mask = (distances_array[np.newaxis, :] >= poi_distances[:, np.newaxis])
+            indices = mask.argmax(axis=1)
 
-        return dl_bitrate
+            # Identify POI distances that do not have a corresponding larger/equal distance in distances_array
+            no_larger_equal = ~mask.any(axis=1)
+
+            # Fetch the corresponding bitrate values and handle out-of-bound values
+            dl_bitrate = bitrate_array[indices]
+            dl_bitrate[no_larger_equal] = np.nan
+
+            # Store the results
+            dl_bitrates[:, i] = dl_bitrate
+
+        # Compute the weighted sum of the downlink bitrates
+        weighted_sum = np.dot(dl_bitrates, weights)
+
+        return weighted_sum
 
     def poiddatareq(self, d):
         """
         Calculate the number of resource blocks required to meet the download throughput target for each distance.
 
         Parameters:
-        - d (list): List of distances from the tower in meters.
+        - d (list, numpy array, or pandas Series): Distances from the tower in meters.
 
         Returns:
-        - list: List of resource blocks required to meet the download throughput target for each distance.
-                    Returns np.inf for distances exceeding max_radius or None if an error occurs.
+        - np.ndarray: Array of resource blocks required to meet the download throughput target for each distance.
+                    Returns np.inf for distances exceeding max_radius or np.nan if an error occurs.
         """
-        if not isinstance(d, list):
-            d = [d]
+        # Convert input to numpy array
+        d = np.array(d, dtype=float).flatten()
 
-        results = []
+        results = np.full(d.shape, np.nan)
         try:
             # Get the downlink bitrate for the given distances
             dl_bitrate = self.get_dl_bitrate(poi_distances=d)
-            for i, distance in enumerate(d):
-                # Compute the number of resource blocks required to meet the download throughput target
-                if distance > self.max_radius:
-                    rbdlthtarg = np.inf
-                else:
-                    rbdlthtarg = self.dlthtarg * 1024 / (dl_bitrate[i] / self.avrbpdsch)
-                # Log the result for each distance
-                self._log_info(f'distance = {distance}, rbdlthtarg = {rbdlthtarg}')
-                results.append(rbdlthtarg)
+
+            # Vectorized computation
+            mask = d <= self.max_radius
+            results[mask] = self.dlthtarg * 1024 / (dl_bitrate[mask] / self.avrbpdsch)
+            results[~mask] = np.inf
+
+            # Log the results
+            for distance, rbdlthtarg in zip(d, results):
+                self._log("debug", f'distance = {distance}, rbdlthtarg = {rbdlthtarg}')
+
         except ValueError as e:
-            self._log_info(f"ValueError in poiddatareq: {e}")
-            results = [None] * len(d)
+            self._log("info", f"ValueError in poiddatareq: {e}")
         except Exception as e:
-            self._log_info(f"An error occurred in poiddatareq: {e}")
-            results = [None] * len(d)
+            self._log("info", f"An error occurred in poiddatareq: {e}")
+
         return results
 
     def brrbpopcd(self, popcd):
@@ -227,29 +339,32 @@ class Capacity:
         Bitrate per resource block at population center distance.
 
         Parameters:
-        - popcd (int): Population center distance in meters.
+        - popcd (int, float, list, numpy array, or pandas Series): Population center distance(s) in meters.
 
         Returns:
-        - brrbpopcd (float): Bitrate per resource block at population center distance in kbps.
+        - np.ndarray: Bitrate per resource block at population center distance(s) in kbps.
+                    Returns np.nan for any errors encountered.
         """
-        if not isinstance(popcd, list):
-            popcd = [popcd]
+        # Convert input to numpy array
+        popcd = np.array(popcd, dtype=float).flatten()
 
-        results = []
+        results = np.full(popcd.shape, np.nan)
         try:
             # Get the downlink bitrate for the given distances
             dl_bitrate = self.get_dl_bitrate(poi_distances=popcd)
-            for i, distance in enumerate(popcd):
-                # Compute the bitrate per resource block at the population center distance
-                brrbpopcd = dl_bitrate[i] / self.avrbpdsch
-                self._log_info(f'population centre distance = {distance}, brrbpopcd = {brrbpopcd}')
-                results.append(brrbpopcd)
+
+            # Vectorized computation
+            results = dl_bitrate / self.avrbpdsch
+
+            # Log the results
+            for distance, brrbpopcd_value in zip(popcd, results):
+                self._log("debug", f'population centre distance = {distance}, brrbpopcd = {brrbpopcd_value}')
+
         except ValueError as e:
-            self._log_info(f"ValueError in brrbpopcd: {e}")
-            results = [None] * len(popcd)
+            self._log("info", f"ValueError in brrbpopcd: {e}")
         except Exception as e:
-            self._log_info(f"An error occurred in brrbpopcd: {e}")
-            results = [None] * len(popcd)
+            self._log("info", f"An error occurred in brrbpopcd: {e}")
+
         return results
 
     def avubrnonbh(self, udatavmonth):
@@ -277,27 +392,32 @@ class Capacity:
              self.bitsingbyte) /
             self.bitsinkbit)
 
-        self._log_info(f'avubrnonbh = {avubrnonbh}')
+        self._log("debug", f'avubrnonbh = {avubrnonbh}')
 
         return avubrnonbh
 
     def upopbr(self, avubrnonbh, pop):
         """
-        User Population Bitrate per frequency band, kbps
+        Calculate User Population Bitrate per sector in kbps.
+
+        This method computes the total bitrate required for a given population
+        in a cell sector during non-busy hours, considering mobile broadband
+        subscription rates and the operator's market share.
 
         Parameters:
         - avubrnonbh (float): Average user bitrate in non-busy hour in kbps.
-        - upop (int): User population number, people.
-        - oppopshare (int): Percentage of population using operator services in %.
-        - fb_per_site (int): No. of Frequency Bands on Site
+        - pop (int): Total population in the area served by the cell sector.
 
         Returns:
-        - upopbr (float): User Population Bitrate in kbps.
+        - float: User Population Bitrate in kbps.
 
         Note:
+        This calculation uses class attributes mbb_subscr (mobile broadband
+        subscription rate), oppopshare (operator's market share), and
+        sectors_per_site (number of sectors per cell site).
         """
-        upopbr = avubrnonbh * pop * (self.mbb_subscr / 100) * (self.oppopshare / 100) / self.fb_per_site
-        self._log_info(f'upopbr = {upopbr}')
+        upopbr = avubrnonbh * pop * (self.mbb_subscr / 100) * (self.oppopshare / 100) / self.sectors_per_site
+        self._log("debug", f'upopbr = {upopbr}')
 
         return upopbr
 
@@ -306,24 +426,27 @@ class Capacity:
         User population resource blocks utilisation
 
         Parameters:
-        - upopbr (float): User Population Bitrate in kbps.
-        - brrbpopcd (float): Bitrate per resource block at population center distance in kbps.
+        - upopbr (float, int, or array-like): User Population Bitrate in kbps.
+        - brrbpopcd (float, int, or array-like): Bitrate per resource block at population center distance in kbps.
 
         Returns:
-        - upoprbu (float): User population resource blocks utilisation in units.
+        - np.ndarray: User population resource blocks utilisation in units.
 
         Note:
+        If upopbr is a scalar and brrbpopcd is an array, the function will broadcast upopbr to match brrbpopcd's shape.
         """
-        if not isinstance(upopbr, list):
-            upopbr = [upopbr]
-        if not isinstance(brrbpopcd, list):
-            brrbpopcd = [brrbpopcd]
-        if len(upopbr) > 1:
-            raise ValueError("upopbr is not of length 1.")
+        # Convert inputs to numpy arrays
+        upopbr = np.array(upopbr, dtype=float).flatten()
+        brrbpopcd = np.array(brrbpopcd, dtype=float).flatten()
+
+        # Check if upopbr is a scalar (single value)
+        if upopbr.size != 1 and upopbr.size != brrbpopcd.size:
+            raise ValueError(f"upopbr must be a scalar or have the same size as brrbpopcd. upopbr size: {upopbr.size}, brrbpopcd size: {brrbpopcd.size}")
 
         # Calculate user population resource blocks utilisation in units.
-        upoprbu = [upopbr[0] / denom for denom in brrbpopcd]
-        self._log_info(f'upoprbu = {upoprbu}')
+        upoprbu = upopbr / brrbpopcd
+
+        self._log("debug", f'upoprbu = {upoprbu}')
         return upoprbu
 
     def cellavcap(self, avrbpdsch, upoprbu):
@@ -331,24 +454,27 @@ class Capacity:
         Cell site available capacity check.
 
         Parameters:
-        - avrbpdsch (float): Resource blocks available for PDSCH, resource blocks.
-        - upoprbu (float): User population resource blocks utilisation, resource blocks.
+        - avrbpdsch (float, int, or array-like): Resource blocks available for PDSCH, resource blocks.
+        - upoprbu (float, int, or array-like): User population resource blocks utilisation, resource blocks.
 
         Returns:
-        - cellavcap (float): Shows available capacity at the cell site, resource blocks.
+        - np.ndarray: Shows available capacity at the cell site, resource blocks.
 
         Note:
+        If avrbpdsch is a scalar and upoprbu is an array, the function will broadcast avrbpdsch to match upoprbu's shape.
         """
-        if not isinstance(avrbpdsch, np.ndarray):
-            avrbpdsch = np.array(avrbpdsch)
-        # Check if upoprbu is not already a NumPy array, convert if necessary
-        if not isinstance(upoprbu, np.ndarray):
-            upoprbu = np.array(upoprbu)
+        # Convert inputs to numpy arrays
+        avrbpdsch = np.array(avrbpdsch, dtype=float).flatten()
+        upoprbu = np.array(upoprbu, dtype=float).flatten()
 
-        # Cell site available capacity.
+        # Check if avrbpdsch is a scalar (single value)
+        if avrbpdsch.size != 1 and avrbpdsch.size != upoprbu.size:
+            raise ValueError(f"avrbpdsch must be a scalar or have the same size as upoprbu. avrbpdsch size: {avrbpdsch.size}, upoprbu size: {upoprbu.size}")
+
+        # Cell site available capacity calculation
         cellavcap = avrbpdsch - upoprbu
-        cellavcap = cellavcap.tolist()
-        self._log_info(f'cellavcap = {cellavcap}')
+
+        self._log("debug", f'cellavcap = {cellavcap}')
 
         return cellavcap
 
@@ -357,22 +483,27 @@ class Capacity:
         Sufficient capacity check
 
         Parameters:
-        - cellavcap (float): Shows available capacity at the cell site, resource blocks.
-        - rbdlthtarg (float): RB number required to meet download throughput target in units.
+        - cellavcap (float, int, or array-like): Shows available capacity at the cell site, resource blocks.
+        - rbdlthtarg (float, int, or array-like): RB number required to meet download throughput target in units.
 
         Returns:
-        - sufcapch (boolean): Shows that capacity requirement is satisfied.
+        - np.ndarray: Boolean array showing whether capacity requirement is satisfied for each element.
 
         Note:
+        If one input is a scalar and the other is an array, the function will broadcast the scalar to match the array's shape.
         """
-        if not isinstance(cellavcap, np.ndarray):
-            cellavcap = np.array(cellavcap)
-        if not isinstance(rbdlthtarg, np.ndarray):
-            rbdlthtarg = np.array(rbdlthtarg)
+        # Convert inputs to numpy arrays
+        cellavcap = np.array(cellavcap, dtype=float).flatten()
+        rbdlthtarg = np.array(rbdlthtarg, dtype=float).flatten()
 
+        # Check if inputs have compatible sizes
+        if cellavcap.size != 1 and rbdlthtarg.size != 1 and cellavcap.size != rbdlthtarg.size:
+            raise ValueError(f"Inputs must have the same size or one must be a scalar. cellavcap size: {cellavcap.size}, rbdlthtarg size: {rbdlthtarg.size}")
+
+        # Sufficient capacity check
         sufcapch = cellavcap > rbdlthtarg
-        sufcapch = sufcapch.tolist()
-        self._log_info(f'sufcapch = {sufcapch}')
+
+        self._log("debug", f'sufcapch = {sufcapch}')
         return sufcapch
 
     def capacity_checker(self, d, popcd, udatavmonth, pop):
@@ -402,8 +533,6 @@ class Capacity:
         - `upoprbu`: User population resource block utilization based on the user population bitrate `upopbr` and the bitrate per resource block `brrpopcd`.
         - `cellavcap`: Available cell capacity based on `avrbpdsch` and `upoprbu`.
         - `capcheck`: Capacity sufficiency check based on `cellavcap` and the target data rate `rbdlthtarg`.
-
-        The capacity check result is stored in `self.capcheck_result`.
         """
 
         # Independent functions
@@ -423,144 +552,176 @@ class Capacity:
 
     def calculate_buffer_areas(self):
         """
-        Calculates buffer areas around cell sites adjusted with Voronoi polygons
-        representing cell sites service areas. Breaks down buffer areas into rings of a specified radius to segment
-        demand estimates by distance.
+        Calculate buffer areas around cell sites and perform spatial analysis for network capacity assessment.
 
-        Parameters:
-        - cellsites (geodataframe): Cellsites data containing cell site latitudes and longitudes.
-        - min_radius (int): Minimum radius around cell site location for population calculation, meters.
-        - max_radius (int): Maximum radius around cell site location for population calculation, meters.
-        - radius_step (int): Radius step size for population calculation, meters.
+        This method performs the following key operations:
+        1. Creates buffer areas and rings around cell sites using Voronoi polygons.
+        2. Conducts visibility analysis between Points of Interest (POIs) and cell sites.
+        3. Performs capacity calculations at POI, ring, and cell site levels.
+
+        The method uses several geospatial operations:
+        - Converts input data to GeoDataFrames
+        - Projects data to an appropriate UTM CRS for accurate distance calculations
+        - Creates Voronoi polygons to represent cell site service areas
+        - Generates buffer areas and rings around cell sites
+        - Performs spatial joins to associate POIs with cell sites and population data with rings
+
+        Capacity calculations include:
+        - Resource block requirements for download throughput targets
+        - Bitrate per resource block at different distances
+        - User population bitrate and resource block utilization
+        - Available cell capacity and sufficiency checks
 
         Returns:
-        - buffer_cellsites (geodataframe): Cellsites data containing buffer areas around cell site locations.
+        tuple: A tuple containing two elements:
+            - geodataframes (dict): A dictionary with two GeoDataFrames:
+                - 'buffers': Buffer areas around cell sites
+                - 'rings': Ring areas around cell sites
+            - pois_within_cellsites (GeoDataFrame): POIs within cell site coverage areas,
+            including capacity analysis results
 
         Note:
+        - This method relies on several class attributes and methods for calculations.
+        - The visibility analysis is performed only if pre-computed visibility data is not provided.
+        - All output GeoDataFrames are reprojected to WGS84 (EPSG:4326) before being returned.
+
+        Important class attributes used:
+        - self.cellsites: Cell site data
+        - self.poi: Points of Interest data
+        - self.population_data: Population distribution data
+        - self.visibility: Pre-computed visibility data (if available)
+        - self.min_radius, self.max_radius, self.radius_step: Buffer configuration
+        - self.area: Study area boundary
         """
-        def _poi_sufcapch(poi, visibility, buffer_cellsites_result):
-            """
-            Process and merge POI, visibility, and cell site data.
+        def _get_visibility_status(row):
+            log_progress_bar(self.logger, row.name + 1, len(pois_within_cellsites), prefix='Visibility Analysis:', length=50)
+            if pd.isna(row["ict_id"]):
+                return np.nan, np.nan
+            else:
+                return self.visibility_analyzer.perform_pair_analysis(row["poi_id"], row["ict_id"])
 
-            Args:
-            poi (DataFrame): POI data with 'poi_id', 'lat', and 'lon'.
-            visibility (DataFrame): Visibility data with 'poi_id', 'order', 'ground_distance', and 'ict_id'.
-            buffer_cellsites_result (DataFrame): Cell site data with 'ict_id' and other relevant columns.
-
-            Returns:
-            DataFrame: Merged and processed data indexed by 'poi_id'.
-            """
-            # Filter visibility DataFrame to include only rows where order is 1
-            visibility_filtered = visibility.loc[visibility["order"] == 1, :]
-
-            # Merge POI DataFrame with filtered visibility DataFrame on 'poi_id'
-            poi_merged = poi[["poi_id", "lat", "lon"]].merge(visibility_filtered, on="poi_id", how="left")
-
-            # Drop 'lat' and 'lon' columns from buffer_cellsites_result
-            buffer_cellsites_result_cleaned = buffer_cellsites_result.drop(columns=["lat", "lon"], inplace=False)
-
-            # Merge the POI data with the cleaned buffer_cellsites_result on 'ict_id'
-            poi_data_merged = (
-                poi_merged[['poi_id', 'lat', 'lon', 'ground_distance', 'ict_id']]
-                .merge(buffer_cellsites_result_cleaned, on='ict_id', how='left')
-                .drop(columns="ict_id")
-                .set_index('poi_id')
-            )
-
-            return poi_data_merged
+        ### GEODATA PREPARATION ###
 
         # Copy input data
-        cellsites = self.cellsites.copy()
-        visibility = self.visibility.copy()
-        poi = self.poi.copy()
+        cellsites = self.cellsites.data.copy()
+        poi = self.poi.data.copy()
+        population_gdf = self.population_data.copy()
+        if self.visibility is not None:
+            visibility = self.visibility.data.copy()
 
-        # For distance conversion from meters to degrees
-        central_latitude = cellsites['lat'].mean()
-
-        # Convert cell sites to a GeoDataFrame - assuming the input data used the EPSG 4326 CRS
-        # Re-project to the same CRS as the population vector data
+        # Create GeoDataFrames for cell sites and POIs
         cellsites_gdf = gpd.GeoDataFrame(
-            geometry=gpd.points_from_xy(
-                x=cellsites.lon,
-                y=cellsites.lat),
-            crs="4326",
-            data=cellsites)
-        cellsites_gdf = cellsites_gdf.to_crs(self.population_data.crs)
+            cellsites, geometry=gpd.points_from_xy(cellsites.lon, cellsites.lat), crs=4326
+        ).drop_duplicates(subset='ict_id')  # Drop duplicates in one step
 
-        # Drop duplicated ict_ids rows from cellsites to avoid redundancy
-        # during Voronoi polygons generation
-        cellsites_gdf = cellsites_gdf.drop(
-            cellsites_gdf.loc[cellsites_gdf.ict_id.duplicated(), :].index)
+        pois_gdf = gpd.GeoDataFrame(
+            poi, geometry=gpd.points_from_xy(poi.lon, poi.lat), crs=4326
+        )
 
-        # Create buffers for different radii around the cell sites
-        # This loop adds columns corresponding to the buffer areas and rings
-        buffer_cellsites = cellsites_gdf.copy().reset_index()
+        # Estimate UTM CRS and reproject the GeoDataFrames
+        poi_utm = pois_gdf.estimate_utm_crs()
+        for gdf in [pois_gdf, population_gdf, cellsites_gdf]:
+            gdf.to_crs(poi_utm, inplace=True)
+
+        ### CREATE BUFFERS AND RINGS AROUND EACH CELL SITE ###
+
+        # Create Voronoi polygons for the cell sites
+        cellsites_gdf = create_voronoi_cells(cellsites_gdf, self.area)
+
+        # Generate buffers, rings, and clipped areas
         for radius in range(self.min_radius, self.max_radius + 1, self.radius_step):
-            # convert radius from meters to degrees
-            radius_in_degrees = meters_to_degrees_latitude(
-                radius, central_latitude)
-            # create buffer columns in the geodataframe and insert buffer
-            # geometries there
-            buffer_cellsites[f'buffer_{radius}'] = buffer_cellsites['geometry'].apply(
-                lambda point: point.buffer(radius_in_degrees))
-            # create population center distances columns in the geodataframe
-            # and insert distances values there
-            buffer_cellsites[f'popcd_{radius}'] = int(radius - self.radius_step / 2)
-            # create ring columns in the geodataframe and insert ring
-            # geometries there
+            buffer_col = f'buffer_{radius}'
+            ring_col = f'ring_{radius}'
+            clring_col = f'clring_{radius}'
+            clbuffer_col = f'clbuffer_{radius}'
+
+            # Create buffer areas
+            cellsites_gdf[buffer_col] = cellsites_gdf.geometry.buffer(radius)
+
+            # Create rings based on buffer differences
             if radius == self.min_radius:
-                # first ring is the same as the first buffer area
-                buffer_cellsites[f'ring_{radius}'] = buffer_cellsites[f'buffer_{radius}']
+                cellsites_gdf[ring_col] = cellsites_gdf[buffer_col]
             else:
-                # ring is the difference between current buffer and the
-                # previous buffer
-                buffer_cellsites[f'ring_{radius}'] = buffer_cellsites[f'buffer_{radius}'].difference(
-                    buffer_cellsites[f'buffer_{radius - self.radius_step}'])
+                prev_buffer = f'buffer_{radius - self.radius_step}'
+                cellsites_gdf[ring_col] = cellsites_gdf[buffer_col].difference(cellsites_gdf[prev_buffer])
 
-        # Create Voronoi cells, this adds a new column with the geometry
-        # corresponding to the Voronoi polygons
-        buffer_cellsites = create_voronoi_cells(buffer_cellsites, self.area)
+            # Intersect rings and buffers with Voronoi polygons
+            cellsites_gdf[clring_col] = cellsites_gdf.apply(lambda row: row[ring_col].intersection(row.voronoi_polygons), axis=1)
+            cellsites_gdf[clbuffer_col] = cellsites_gdf.apply(lambda row: row[buffer_col].intersection(row.voronoi_polygons), axis=1)
 
-        # Check capacity for each cell site
-        for radius in range(self.min_radius, self.max_radius + 1, self.radius_step):
-            # Clip ring areas with Voronoi polygons to identify cell sites
-            # service areas within each ring.
-            buffer_cellsites[f'clring_{radius}'] = buffer_cellsites.apply(
-                lambda row: row[f'ring_{radius}'].intersection(row['voronoi_polygons']), axis=1)
-            # Calculate population count within clipped ring areas.
-            buffer_cellsites[f'pop_clring_{radius}'] = vectorized_population_sum(buffer_cellsites, self.population_data, radius)
-            # Calculate avubrnonbh, the average user bitrate in non-busy hour in kbps, from country-level statistics
-            avubrnonbh = self.avubrnonbh(self.udatavmonth_pu)
-            # Calculate user population bitrate in kbps within clipped ring areas.
-            buffer_cellsites[f'upopbr_{radius}'] = buffer_cellsites[f'pop_clring_{radius}'].apply(
-                lambda row: self.upopbr(avubrnonbh, row))
-            # Calculate bitrate per resource block at population center distance in kbps.
-            buffer_cellsites[f'brrbpopcd_{radius}'] = buffer_cellsites[f'popcd_{radius}'].apply(
-                lambda row: self.brrbpopcd(row)
-            )
-            # Calculate user population resource blocks utilisation within clipped ring areas.
-            buffer_cellsites[f'upoprbu_{radius}'] = buffer_cellsites.apply(
-                lambda row: self.upoprbu(row[f'upopbr_{radius}'], row[f'brrbpopcd_{radius}']), axis=1
-            )
-        # Calculate total number of cell site required resource blocks
-        upoprbu_columns = [col for col in buffer_cellsites.columns if col.startswith('upoprbu_')]
-        buffer_cellsites['upoprbu_total'] = buffer_cellsites[upoprbu_columns].apply(lambda row: [sum(x) for x in zip(*row)], axis=1)
+        # Convert clipped buffers to long format (only for the maximum radius buffer)
+        buffers_gdf = cellsites_gdf[['ict_id', f'clbuffer_{self.max_radius}']].rename(columns={f'clbuffer_{self.max_radius}': 'geometry'})
+        buffers_gdf = gpd.GeoDataFrame(buffers_gdf, geometry='geometry', crs=poi_utm)
 
-        # Calculate cell site available capacity
-        buffer_cellsites['cellavcap'] = buffer_cellsites['upoprbu_total'].apply(
-            lambda row: self.cellavcap(self.avrbpdsch, row))
+        # Convert clipped rings to long format
+        rings_columns = ['ict_id'] + [col for col in cellsites_gdf.columns if col.startswith('clring')]
+        rings_gdf = cellsites_gdf[rings_columns].melt(id_vars='ict_id', var_name='buffer_column', value_name='geometry')
+        rings_gdf['buffer'] = rings_gdf['buffer_column'].str.extract(r'(\d+)').astype(int)
+        rings_gdf = gpd.GeoDataFrame(rings_gdf.drop('buffer_column', axis=1), geometry='geometry', crs=poi_utm)
+        rings_gdf['radius'] = rings_gdf['buffer'] - self.radius_step / 2
 
-        # Store the buffer analysis results
-        self.buffer_cellsites_result = buffer_cellsites.set_index('ict_id').drop(columns='index')
-        poi_data_merged = _poi_sufcapch(poi, visibility, self.buffer_cellsites_result)
-        poi_data_merged['rbdlthtarg'] = poi_data_merged['ground_distance'].apply(
-            lambda row: self.poiddatareq(row)
-        )
-        poi_data_merged['sufcapch'] = poi_data_merged.apply(
-            lambda row: self.sufcapch(row['cellavcap'], row['rbdlthtarg'])[0], axis=1
-        )
-        self.poi_sufcapch_result = poi_data_merged
-        return self.buffer_cellsites_result, self.poi_sufcapch_result
+        ### VISIBILITY ANALYSIS ###
+
+        # If visibility analysis is not provided
+        if self.visibility is None:
+            # Match POIs to cell towers based on coverage area
+            pois_within_cellsites = gpd.sjoin(pois_gdf, buffers_gdf, how='left', predicate='within')
+            pois_within_cellsites = pois_within_cellsites.drop_duplicates(subset='poi_id', keep='first')  # Drop duplicates in one step, but should not happen because of Voronoi cells
+            pois_within_cellsites = pois_within_cellsites[["poi_id", "lat", "lon", "ict_id"]]
+            # Assess whether the POI is visible from the cell site
+            pois_within_cellsites["ground_distance"], pois_within_cellsites["is_visible"] = zip(*pois_within_cellsites.apply(_get_visibility_status, axis=1))
+        # If visibility analysis results are provided, no need to launch visibility analysis
+        else:
+            # Match POIs to cell towers based on coverage area
+            visibility_filtered = visibility.loc[visibility["order"] == 1, ["poi_id", "ground_distance", "is_visible", "ict_id"]]
+            pois_within_cellsites = pois_gdf[["poi_id", "lat", "lon"]].merge(visibility_filtered, on="poi_id", how="left")
+
+        ### POI-LEVEL COMPUTATIONS ###
+
+        # Number of resource blocks required to meet the download throughput target for each distance
+        pois_within_cellsites["rbdlthtarg"] = self.poiddatareq(pois_within_cellsites["ground_distance"])
+
+        ### RING-LEVEL COMPUTATIONS AROUND EACH CELL SITE ###
+
+        # Bitrate per resource block at population center distance
+        rings_gdf["brrbpopcd"] = rings_gdf["radius"].map(self.brrbpopcd).apply(lambda x: x[0])
+        # Get population per ring
+        population_join = gpd.sjoin(population_gdf, rings_gdf, how='inner', predicate='within')
+        population_join = population_join.groupby(['ict_id', 'buffer']).agg({'population': 'sum'}).reset_index()
+        rings_gdf = rings_gdf.merge(population_join, on=['ict_id', 'buffer'], how='left')
+        rings_gdf["population"] = rings_gdf["population"].fillna(0)
+        # User population bitrate per ring
+        rings_gdf["upopbr"] = self.upopbr(self.avubrnonbh(self.udatavmonth_pu), rings_gdf["population"])
+        # User population resource blocks utilisation
+        rings_gdf["upoprbu"] = self.upoprbu(rings_gdf["upopbr"], rings_gdf["brrbpopcd"])
+
+        ### CELL SITE-LEVEL COMPUTATIONS ###
+
+        # Sum all rings for each cell site, yielding the total resource blocks utilisation per cell site
+        cellsites_rbu = rings_gdf.groupby('ict_id')["upoprbu"].sum().reset_index()
+        cellsites_rbu["cellavcap"] = cellsites_rbu["upoprbu"].apply(lambda row: self.cellavcap(self.avrbpdsch, row)[0])
+
+        ### MERGE POI AND CELL SITE ###
+
+        pois_within_cellsites = pois_within_cellsites.merge(cellsites_rbu, on='ict_id', how='left')
+        pois_within_cellsites["cellavcap"] = pois_within_cellsites["cellavcap"].fillna(0)
+        pois_within_cellsites["sufcapch"] = self.sufcapch(pois_within_cellsites["cellavcap"], pois_within_cellsites["rbdlthtarg"])
+        pois_within_cellsites = pois_within_cellsites[["poi_id", "lat", "lon", "ict_id", "ground_distance", "is_visible", "rbdlthtarg", "upoprbu", "cellavcap", "sufcapch"]]
+
+        ### PREPARE OUTPUT ###
+       
+       # Export as GeoDataFrames in WGS84
+        pois_within_cellsites = gpd.GeoDataFrame(
+            pois_within_cellsites,
+            geometry=gpd.points_from_xy(pois_within_cellsites["lon"], pois_within_cellsites["lat"]),
+            crs=poi_utm)
+        for gdf in [buffers_gdf, rings_gdf, pois_within_cellsites]:
+            gdf.to_crs(4326, inplace=True)
+
+        # Package rings and buffer geodata into a single dictionary
+        geodataframes = {"buffers": buffers_gdf, "rings": rings_gdf}
+
+        return geodataframes, pois_within_cellsites
 
     def mbbtps(self):
         """

@@ -1,39 +1,33 @@
 import os
 import pytest
 import sys
+import pandas as pd
 from mobile_capacity.entities.pointofinterest import PointOfInterestCollection
 from mobile_capacity.entities.cellsite import CellSiteCollection
 from mobile_capacity.entities.visibilitypair import VisibilityPairCollection
-from mobile_capacity.datastorage import DataStorage
 from mobile_capacity.capacity import Capacity
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.append(os.path.join(os.path.dirname(__file__), 'unit'))
 
 
 @pytest.fixture
-def storage():
-    test_data_dir = os.path.join(os.path.dirname(__file__), 'data')
-    return DataStorage(data_dir=test_data_dir)
-
-
-@pytest.fixture
-def poi(storage):
-    pointsofinterest_filepath = os.path.join("input_data", "points-of-interest.csv")
-    pointsofinterest = storage.load_data(pointsofinterest_filepath)
+def poi():
+    pointsofinterest_filepath = "https://zstagigaprodeuw1.blob.core.windows.net/gigainframapkit-public-container/mobile_capacity_data/test_data/points-of-interest.csv"
+    pointsofinterest = pd.read_csv(pointsofinterest_filepath).to_dict('records')
     return PointOfInterestCollection(poi_records=pointsofinterest)
 
 
 @pytest.fixture
-def cellsites(storage):
-    cellsites_filepath = os.path.join("input_data", "cell-sites.csv")
-    cellsites = storage.load_data(cellsites_filepath)
+def cellsites():
+    cellsites_filepath = "https://zstagigaprodeuw1.blob.core.windows.net/gigainframapkit-public-container/mobile_capacity_data/test_data/cell-sites.csv"
+    cellsites = pd.read_csv(cellsites_filepath).to_dict('records')
     return CellSiteCollection(cellsite_records=cellsites)
 
 
 @pytest.fixture
-def visibilitypairs(storage):
-    visibilitypairs_filepath = os.path.join("input_data", "visibility.csv")
-    visibilitypairs = storage.load_data(visibilitypairs_filepath)
+def visibilitypairs():
+    visibilitypairs_filepath = "https://zstagigaprodeuw1.blob.core.windows.net/gigainframapkit-public-container/mobile_capacity_data/test_data/visibility.csv"
+    visibilitypairs = pd.read_csv(visibilitypairs_filepath).to_dict('records')
     return VisibilityPairCollection(pair_records=visibilitypairs)
 
 
@@ -45,13 +39,16 @@ def init_variable_values():
         'logs_dir': os.path.join(os.path.dirname(__file__), 'logs'),
         'country_code': "ESP",
         'enable_logging': False,
+        'use_secure_files': False,
 
         # Network Configuration
-        'bw': 20,  # Bandwidth, MHz
+        'bw_L850': 5,  # MHz on L700 to L900 spectrum bandwidth
+        'bw_L1800': 10,  # MHz on L1800 spectrum bandwidth
+        'bw_L2600': 20,  # MHz on L2600 spectrum bandwidth
         'rb_num_multiplier': 5,
         'cco': 18,  # Control channel overheads in %
         'mbb_subscr': 113,  # Active mobile-broadband subscriptions per 100 people
-        'fb_per_site': 3,  # Number of frequency bands on site
+        'sectors_per_site': 3,  # Number of sectors on site
         'angles_num': 360,  # Set the number of angles to be used for azimuth analysis
         'rotation_angle': 60,  # Define the rotation angle to create a sector +/-rotation_angle degrees clockwise and counter-clockwise
 

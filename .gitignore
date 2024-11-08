@@ -1,29 +1,32 @@
-# Ignore documentation files
-documentation/*
+# Documentation
+documentation/
 
-# Ignore everything in data/auxiliary_data
-data/auxiliary_data/*
+# Data directories
+data/auxiliary_data/
+data/output_data/
 
-# Ignore everything in data/input_data
-data/input_data/*
+# OSM API cache
+notebooks/cache/
 
-# But track these specific files in data/input_data
-!data/input_data/cell-sites.csv
-!data/input_data/points-of-interest.csv
-!data/input_data/visibility.csv
-!data/input_data/area.gpkg
-!data/input_data/mobile-coverage.gpkg
+# Ignore all notebooks except Ibiza.ipynb
+notebooks/examples/*
+!notebooks/examples/Ibiza.ipynb
 
-# Python cache files
+# Input data
+data/input_data/carrier_bandwidth/bwdistance_km.csv
+data/input_data/carrier_bandwidth/bwdlachievbr_kbps.csv
+
+# Compressed and image files
+*.zip
+*.tif
+
+# Python cache
 __pycache__/
-**/__pycache__/
 *.pyc
 
-# Jupyter Notebook checkpoints
+# Jupyter Notebook
 .ipynb_checkpoints
 .ipynb_aml_checkpoints
-*/.ipynb_checkpoints/*
-*/.ipynb_aml_checkpoints/*
 
 # System files
 .DS_Store
@@ -31,16 +34,18 @@ __pycache__/
 # IDE files
 .idea/
 
-# Configuration files
+# Configuration and sensitive files
 config*
+*.key
+*.env
 
 # Log files
-logs/*
+logs/
 
-# Azure ML specific files
+# Azure ML specific
 *.amltmp
 *.amlignore
-*.amlignore.amltmp
+.azuredevops
 
-# Ignore all files in the output_data folder
-data/output_data/*
+# Shell scripts
+*.sh

@@ -1,4 +1,8 @@
 import pandas as pd
+import geopandas as gpd
+import numpy as np
+from mobile_capacity.spatial import haversine_
+from shapely.geometry import Point
 
 
 class Entity:
@@ -22,6 +26,14 @@ class Entity:
     @classmethod
     def from_dict(cls, data_dict):
         return cls(**data_dict)
+
+    def get_point_geometry(self):
+        return Point(self.lon, self.lat)
+
+    def get_distance(self, other):
+        if not isinstance(other, Entity):
+            raise TypeError(f'other must be an instance of {Entity}')
+        return haversine_(lats=[self.lat, other.lat], lons=[self.lon, other.lon])
 
     def __repr__(self):
         return f"Entity(entity_type= {self.entity_type}, attributes = {self.additional_fields})"
@@ -92,6 +104,39 @@ class EntityCollection:
         unique_entity_types = set(entity.entity_type for entity in self.entities)
 
         return list(unique_entity_types)
+
+    def get_nth_entity(self, index):
+        if 0 <= index < len(self.entities):
+            return self.entities[index]
+        else:
+            raise IndexError("Index out of range")
+
+    def get_lat_array(self):
+        return np.array([s.lat for s in self.entities])
+
+    def get_lon_array(self):
+        return np.array([s.lon for s in self.entities])
+
+    def get_lat_lon_pairs(self):
+        n = len(self.entities)
+        lat_lon_pairs = np.empty((n, 2))
+
+        for i, entity in enumerate(self.entities):
+            lat_lon_pairs[i] = [entity.lat, entity.lon]
+
+        return lat_lon_pairs
+
+    def get_entity_distance_matrix(self):
+        lat_lon_pairs = self.get_lat_lon_pairs()
+        lats, lons = lat_lon_pairs[:, 0], lat_lon_pairs[:, 1]
+
+        return haversine_(lats=lats, lons=lons)
+
+    def get_geoseries(self):
+        lat_lon_pairs = self.get_lat_lon_pairs()
+        lats, lons = lat_lon_pairs[:, 0], lat_lon_pairs[:, 1]
+
+        return gpd.GeoSeries(gpd.points_from_xy(lons, lats), crs='EPSG:4326')
 
     def __len__(self):
         return len(self.entities)

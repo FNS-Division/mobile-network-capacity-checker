@@ -74,6 +74,7 @@ class PopulationDataHandler:
         self.dataset_year = dataset_year
         self.check_directory()
 
+        # Logger
         if self.enable_logging:
             if logger is None:
                 self.logger = initialize_logger(self.logs_dir)
@@ -93,6 +94,8 @@ class PopulationDataHandler:
                 self.logger.warn(message)
             elif level == 'error':
                 self.logger.error(message)
+            elif level == 'debug':
+                self.logger.debug(message)
 
     def check_directory(self):
         # Checks if the specified data directory exists.
