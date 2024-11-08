@@ -153,8 +153,8 @@ class Capacity:
             self.bwdistance_km = pd.read_csv(file_paths['bwdistance_km'])
             self.bwdlachievbr = pd.read_csv(file_paths['bwdlachievbr_kbps'])
         else:
-            self.bwdistance_km = pd.read_csv("https://zstagigaprodeuw1.blob.core.windows.net/gigainframapkit-public-container/mobile_capacity_data/carrier_bandwidth/_bwdistance_km_dummy.csv")
-            self.bwdlachievbr = pd.read_csv("https://zstagigaprodeuw1.blob.core.windows.net/gigainframapkit-public-container/mobile_capacity_data/carrier_bandwidth/_bwdlachievbr_kbps_dummy.csv") 
+            self.bwdistance_km = pd.read_csv("https://zstagigaprodeuw1.blob.core.windows.net/gigainframapkit-public-container/mobile_capacity_data/carrier_bandwidth/bwdistance_km.csv")
+            self.bwdlachievbr = pd.read_csv("https://zstagigaprodeuw1.blob.core.windows.net/gigainframapkit-public-container/mobile_capacity_data/carrier_bandwidth/bwdlachievbr_kbps.csv") 
 
         # Set up the population data handler, and get population data
         self.population_data_handler = PopulationDataHandler(
@@ -611,11 +611,11 @@ class Capacity:
 
         # Create GeoDataFrames for cell sites and POIs
         cellsites_gdf = gpd.GeoDataFrame(
-            cellsites, geometry=gpd.points_from_xy(cellsites.lon, cellsites.lat), crs="4326"
+            cellsites, geometry=gpd.points_from_xy(cellsites.lon, cellsites.lat), crs=4326
         ).drop_duplicates(subset='ict_id')  # Drop duplicates in one step
 
         pois_gdf = gpd.GeoDataFrame(
-            poi, geometry=gpd.points_from_xy(poi.lon, poi.lat), crs="4326"
+            poi, geometry=gpd.points_from_xy(poi.lon, poi.lat), crs=4326
         )
 
         # Estimate UTM CRS and reproject the GeoDataFrames
@@ -716,7 +716,7 @@ class Capacity:
             geometry=gpd.points_from_xy(pois_within_cellsites["lon"], pois_within_cellsites["lat"]),
             crs=poi_utm)
         for gdf in [buffers_gdf, rings_gdf, pois_within_cellsites]:
-            gdf.to_crs("4326", inplace=True)
+            gdf.to_crs(4326, inplace=True)
 
         # Package rings and buffer geodata into a single dictionary
         geodataframes = {"buffers": buffers_gdf, "rings": rings_gdf}

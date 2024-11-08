@@ -8,17 +8,13 @@ data/output_data/
 # OSM API cache
 notebooks/cache/
 
+# Ignore all notebooks except Ibiza.ipynb
+notebooks/examples/*
+!notebooks/examples/Ibiza.ipynb
+
 # Input data
-data/input_data/carrier_bandwidth/*.enc
-data/input_data/frequency/*.enc
 data/input_data/carrier_bandwidth/bwdistance_km.csv
 data/input_data/carrier_bandwidth/bwdlachievbr_kbps.csv
-data/input_data/frequency/bwdistance_km.csv
-data/input_data/frequency/bwdlachievbr_kbps.csv
-
-# Test
-tests/data/input_data/carrier_bandwidth/bwdistance_km.csv
-tests/data/input_data/carrier_bandwidth/bwdlachievbr_kbps.csv
 
 # Compressed and image files
 *.zip

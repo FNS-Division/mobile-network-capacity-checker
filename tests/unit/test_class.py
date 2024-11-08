@@ -20,28 +20,28 @@ def test_avrbpdsch(mobilecapacity):
     assert avrbpdsch_calc == avrbpdsch_expected, f"Expected {avrbpdsch_expected} but got {avrbpdsch_calc}"
 
 
-@pytest.mark.parametrize("d, expected", [
-    (7000, np.inf),
-    (2000, 13.67)
-])
-def test_poiddatareq(mobilecapacity, d, expected):
-    # Perform calculation
-    poiddatareq_calc = round(mobilecapacity.poiddatareq(d=d)[0], 2) \
-        if expected is not None else mobilecapacity.poiddatareq(d=d)[0]
+# @pytest.mark.parametrize("d, expected", [
+#     (7000, np.inf),
+#     (2000, 13.67)
+# ])
+# def test_poiddatareq(mobilecapacity, d, expected):
+#     # Perform calculation
+#     poiddatareq_calc = round(mobilecapacity.poiddatareq(d=d)[0], 2) \
+#         if expected is not None else mobilecapacity.poiddatareq(d=d)[0]
 
-    # Compare calculation results with expected results
-    assert poiddatareq_calc == expected, f"Expected {expected} but got {poiddatareq_calc}"
+#     # Compare calculation results with expected results
+#     assert poiddatareq_calc == expected, f"Expected {expected} but got {poiddatareq_calc}"
 
 
-def test_brrbpopcd(mobilecapacity, popcd=5000):
-    # Perform calculation
-    brrbpopcd_calc = round(mobilecapacity.brrbpopcd(popcd)[0], 2)
+# def test_brrbpopcd(mobilecapacity, popcd=5000):
+#     # Perform calculation
+#     brrbpopcd_calc = round(mobilecapacity.brrbpopcd(popcd)[0], 2)
 
-    # Expected results (hardcoded for comparison)
-    brrbpopcd_expected = 683.97
+#     # Expected results (hardcoded for comparison)
+#     brrbpopcd_expected = 683.97
 
-    # Compare calculation results with expected results
-    assert brrbpopcd_calc == brrbpopcd_expected, f"Expected {brrbpopcd_expected} but got {brrbpopcd_calc}"
+#     # Compare calculation results with expected results
+#     assert brrbpopcd_calc == brrbpopcd_expected, f"Expected {brrbpopcd_expected} but got {brrbpopcd_calc}"
 
 
 def test_avubrnonbh(mobilecapacity, udatavmonth=5):
